@@ -5,3 +5,4 @@ zig-out/
 
 # temporary
 targets/
+template.j2

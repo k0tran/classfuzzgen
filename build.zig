@@ -10,7 +10,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    cfgen.addCSourceFile(.{ .file = .{ .path = "src/ast.cpp" }, .flags = &.{} });
+    cfgen.addCSourceFiles(&.{ "src/ast.cpp", "src/class.cpp" }, &.{});
+    cfgen.addIncludePath(.{ .path = "include/" });
     cfgen.linkLibCpp();
     cfgen.linkSystemLibrary("clang");
     b.installArtifact(cfgen);
