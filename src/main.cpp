@@ -7,21 +7,6 @@
 #include "ast.hpp"
 #include "class.hpp"
 
-std::string_view file_to_string_view(const char* filename) {
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file");
-    }
-
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    file.close();
-
-    std::string* str = new std::string(buffer.str());
-    return std::string_view(*str);    
-}
-
 int main(const int argc, const char *argv[]) {
     try {
         CLIArgs args(argc, argv);
@@ -36,11 +21,10 @@ int main(const int argc, const char *argv[]) {
         ClassData cdata(class_cursor.value());
         // cdata.debug_print(std::cout);
     
-        // TODO: get filename from CLI, but for now
-        const char *template_name = args.template_name;
-        std::string_view contents = file_to_string_view(template_name);
+        inja::Environment env;
+        inja::Template fuzz_templ = env.parse_template(args.template_name);
         auto jdata = cdata.render_json(args);
-        inja::render_to(std::cout, contents, jdata);
+        env.render_to(std::cout, fuzz_templ, jdata);
 
     } catch (const std::runtime_error &e) {
         std::cerr << "Error: " << e.what() << std::endl;
