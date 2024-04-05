@@ -9,18 +9,12 @@ public:
         size_t n;
     };
 
+    static const char *ARG_STR;
+
     const char *header_path;
     const char *class_name;
+    const char *template_name;
     CompArgs comp_args;
 
-    CLIArgs(const int argc, const char **argv) {
-        if (argc < 3)
-            throw std::logic_error("");
-        
-        header_path = argv[1];
-        class_name = argv[2];
-
-        comp_args.n = argc - 3;
-        comp_args.args = comp_args.n ? argv + 3 : nullptr;
-    }
+    CLIArgs(const int argc, const char **argv);
 };

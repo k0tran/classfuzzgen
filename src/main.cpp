@@ -37,7 +37,7 @@ int main(const int argc, const char *argv[]) {
         // cdata.debug_print(std::cout);
     
         // TODO: get filename from CLI, but for now
-        const char *template_name = "template.j2";
+        const char *template_name = args.template_name;
         std::string_view contents = file_to_string_view(template_name);
         auto jdata = cdata.render_json(args);
         inja::render_to(std::cout, contents, jdata);
@@ -46,7 +46,7 @@ int main(const int argc, const char *argv[]) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     } catch (const std::logic_error &e) {
-        std::cout << "Usage: " << *argv << " <header> <class> ...args_to_compiler..." << std::endl;
+        std::cout << "Usage: " << *argv << CLIArgs::ARG_STR << std::endl;
         return 1;
     }
 
