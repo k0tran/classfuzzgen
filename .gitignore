@@ -4,6 +4,8 @@ zig-cache/
 zig-out/
 
 fuzzer.cpp
+fuzzer
+crash-*
 
 # temporary
 targets/
