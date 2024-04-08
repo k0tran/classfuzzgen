@@ -3,6 +3,7 @@
 zig-cache/
 zig-out/
 
+fuzzer.cpp
+
 # temporary
 targets/
-template.j2
