@@ -1,20 +1,16 @@
 #pragma once
 
-#include <stdexcept>
+#include <CLI11.hpp>
 
 class CLIArgs {
 public:
-    struct CompArgs {
-        const char **args;
-        size_t n;
-    };
+    std::string header_path;
+    std::string class_name;
+    std::string template_name;
+    std::string compile_args;
+    size_t call_max_length;
 
-    static const char *ARG_STR;
+    bool app_exit_code;
 
-    const char *header_path;
-    const char *class_name;
-    const char *template_name;
-    CompArgs comp_args;
-
-    CLIArgs(const int argc, const char **argv);
+    CLIArgs(int argc, char **argv);
 };
