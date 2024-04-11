@@ -8,7 +8,7 @@
 
 class ASTData {
 public:
-    ASTData(const char *header_path, CLIArgs::CompArgs args);
+    ASTData(std::string &header_path, std::string &comp_args);
     
     std::optional<CXCursor> find_class(const char *class_name) const;
 

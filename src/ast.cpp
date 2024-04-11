@@ -2,14 +2,30 @@
 
 #include "ast.hpp"
 
+std::vector<std::string> split(std::string &data) {
+    std::istringstream iss(data);
+    std::string tmp;
+    std::vector<std::string> res;
 
-ASTData::ASTData(const char *header_path, CLIArgs::CompArgs args) {
+    while (iss >> tmp)
+        res.push_back(tmp);
+    
+    return res;
+}
+
+
+ASTData::ASTData(std::string &header_path, std::string &comp_args) {
+    auto splited = split(comp_args);
+    std::vector<const char *> args;
+    for (auto &s : splited)
+        args.push_back(s.c_str());
+
     index = clang_createIndex(0, 0);
     translation_unit = clang_parseTranslationUnit(
         index,
-        header_path,
-        args.args,
-        args.n,
+        header_path.c_str(),
+        args.data(),
+        args.size(),
         0,
         0,
         CXTranslationUnit_None
