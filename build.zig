@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
         "src/ast.cpp",
         "src/class.cpp",
         "src/cli.cpp",
+        "src/render.cpp",
     }, &.{});
     cfgen.addIncludePath(.{ .path = "include/" });
     cfgen.linkLibCpp();

@@ -1,37 +1,35 @@
 #include <iostream>
-#include <string>
-#include <string_view>
-#include <fstream>
-#include <sstream>
 
 #include "ast.hpp"
-#include "class.hpp"
+#include "render.hpp"
+#include "cli.hpp"
 
-int main(const int argc, const char *argv[]) {
+int main(int argc, char **argv) {
     try {
         CLIArgs args(argc, argv);
-
-        ASTData ast(args.header_path, args.comp_args);        
-        auto class_cursor = ast.find_class(args.class_name);
+        if (args.app_exit_code != 0)
+            return args.app_exit_code;
+        
+        ASTData ast(args.header_path, args.compile_args);
+        auto class_cursor = ast.find_class(args.class_name.c_str());
         if (!class_cursor.has_value()) {
-            std::cout << "Error: Class is not found" << std::endl;
+            std::cout << "Error: class not found" << std::endl;
             return 1;
         }
 
         ClassData cdata(class_cursor.value());
         // cdata.debug_print(std::cout);
-    
-        inja::Environment env;
-        inja::Template fuzz_templ = env.parse_template(args.template_name);
-        auto jdata = cdata.render_json(args);
-        env.render_to(std::cout, fuzz_templ, jdata);
 
-    } catch (const std::runtime_error &e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    } catch (const std::logic_error &e) {
-        std::cout << "Usage: " << *argv << CLIArgs::ARG_STR << std::endl;
-        return 1;
+        ClassRender r(cdata, args.template_name);
+        r
+        .set("class_header", args.header_path.c_str())
+        .set("class_name", args.class_name.c_str())
+        .render_to(std::cout);
+
+        
+    } catch (const std::exception &e) {
+        std::cerr << "Unexpected error: " << e.what() << std::endl;
+        return 1; 
     }
 
     return 0;

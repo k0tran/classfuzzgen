@@ -1,6 +1,5 @@
 #include "class.hpp"
 
-
 class ClassDumpInfo {
 public:
     std::vector<ConstructorData> &c;
@@ -37,15 +36,14 @@ CXChildVisitResult class_dump_visitor(CXCursor cursor, CXCursor parent, CXClient
     return CXChildVisit_Continue;
 }
 
-
 ClassData::ClassData(CXCursor class_cursor) {
-    ClassDumpInfo i(contructors, methods);
+    ClassDumpInfo i(constructors, methods);
     clang_visitChildren(class_cursor, class_dump_visitor, (CXClientData)&i);
 }
 
 void ClassData::debug_print(std::ostream &out) const {
-    out << "Number of constrs: " << contructors.size() << std::endl;
-    for (auto &c : contructors) {
+    out << "Number of constrs: " << constructors.size() << std::endl;
+    for (auto &c : constructors) {
         for (auto &a : c){
             CXString tmp = clang_getTypeSpelling(a);
             out << clang_getCString(tmp) << " ";
@@ -70,36 +68,10 @@ void ClassData::debug_print(std::ostream &out) const {
     }
 }
 
-inja::json ClassData::render_json(CLIArgs &args) const {
-    inja::json d;
-    d["class_header"] = args.header_path;
-    d["class_name"] = args.class_name;
-    d["constructors"] = inja::json::array();
-    d["methods"] = inja::json::array();
+const std::vector<ConstructorData> &ClassData::constr_vec() const {
+    return constructors;
+}
 
-    for (size_t i = 0; i < contructors.size(); ++i) {
-        d["constructors"][i] = inja::json::array();
-
-        for (size_t j = 0; j < contructors[i].size(); ++j) {
-            auto s = clang_getTypeSpelling(contructors[i][j]);
-            d["constructors"][i].push_back(clang_getCString(s));
-            clang_disposeString(s);
-        }
-    }
-
-    for (size_t i = 0; i < methods.size(); ++i) {
-        auto s = clang_getCursorSpelling(methods[i].name);
-        d["methods"][i]["name"] = clang_getCString(s);
-        d["methods"][i]["args"] = inja::json::array();
-        clang_disposeString(s);
-        
-        for (size_t j = 0; j < methods[i].args.size(); ++j) {
-            s = clang_getTypeSpelling(methods[i].args[j]);
-            d["methods"][i]["args"].push_back(clang_getCString(s));
-            clang_disposeString(s);
-        }
-    }
-
-
-    return d;
+const std::vector<MethodData> &ClassData::method_vec() const {
+    return methods;
 }

@@ -13,7 +13,6 @@ namespace target {
 
 struct Argument {
     bool is_pointer;
-    bool is_primitive;
     size_t size;
 };
 
@@ -29,24 +28,24 @@ struct CData {
 
 {% for c in constructors %}
 {{ class_name }} constr_{{ loop.index }}(const uint8_t *data) {
-{% if length(c) == 0 %}    return {{ class_name }}();
+{% if length(c.args) == 0 %}    return {{ class_name }}();
 {% else %}    size_t size = 0;
 
-    {% for a in c -%}
-    {{ a }} *arg_{{ loop.index }} = ({{ a }} *)(data + size);
-    size += sizeof({{ a }});{% endfor %}
+    {% for a in c.args -%}
+    {{ a.name }} *arg_{{ loop.index }} = ({{ a.name }} *)(data + size);
+    size += sizeof({{ a.name }});{% endfor %}
 
-    return {{ class_name }}({% for a in c %}{% if loop.index != 0 %}, {% endif %}*arg_{{loop.index}}{% endfor %});
-{% endif %}}
+    return {{ class_name }}({% for a in c.args %}{% if loop.index != 0 %}, {% endif %}*arg_{{loop.index}}{% endfor %});
+{% endif %}{{ "};" }}
 {% endfor %}
 
 const CData c_list[] = {
     {% for c in constructors -%}
     {
         .args = {
-            {% for a in c.args %}{a.is_pointer, a.is_primitive, a.size},{% endfor %}
+            {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
         },
-        .asize = 0{% for i in c %} + sizeof({{ i }}){% endfor %},
+        .asize = 0{% for a in c.args %} + sizeof({{ a.name }}){% endfor %},
         .fn = constr_{{ loop.index }},
     },{% endfor %}
 };
@@ -67,20 +66,20 @@ void method_{{ m.name }}({{ class_name }} *obj, const uint8_t *data) {
 {% else %}    size_t size = 0;
 
     {% for a in m.args -%}
-    {{ a }} *arg_{{ loop.index }} = ({{ a }} *)(data + size);
-    size += sizeof({{ a }});{% endfor %}
+    {{ a.name }} *arg_{{ loop.index }} = ({{ a.name }} *)(data + size);
+    size += sizeof({{ a.name }});{% endfor %}
 
     obj->{{ m.name }}({% for a in m.args %}{% if loop.index != 0 %}, {% endif %}*arg_{{ loop.index }}{% endfor %});
-{% endif %}}
+{% endif %}{{ "};"}}
 {% endfor %}
 
 const MData m_list[] = {
     {% for m in methods -%}
     {
         .args = {
-            {% for a in m.args %}{a.is_pointer, a.is_primitive, a.size},{% endfor %}
-        }
-        .asize = 0{% for i in m.args %} + sizeof({{ i }}){% endfor %},
+            {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
+        },
+        .asize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
         .fn = method_{{ m.name }},
     },{% endfor %}
 };
