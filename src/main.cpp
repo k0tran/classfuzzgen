@@ -7,7 +7,7 @@
 int main(int argc, char **argv) {
     try {
         CLIArgs args(argc, argv);
-        if (args.app_exit_code != 0)
+        if (args.is_err)
             return args.app_exit_code;
         
         ASTData ast(args.header_path, args.compile_args);

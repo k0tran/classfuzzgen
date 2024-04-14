@@ -10,10 +10,11 @@ CLIArgs::CLIArgs(int argc, char **argv) {
     app.add_option("-a,--compile-args", compile_args, "Compile args to clang")->default_str("");
     app.add_option("-l,--call-max-length", call_max_length, "Maximum call chain length")->default_val(10);
 
-    app_exit_code = 0;
+    is_err = false;
     try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError &e) {
+        is_err = true;
         app_exit_code = app.exit(e);
     }
 }

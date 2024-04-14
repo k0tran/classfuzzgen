@@ -10,7 +10,8 @@ public:
     std::string compile_args;
     size_t call_max_length;
 
-    bool app_exit_code;
+    bool is_err;
+    int app_exit_code;
 
     CLIArgs(int argc, char **argv);
 };
