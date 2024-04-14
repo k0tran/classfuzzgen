@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
         r
         .set("class_header", args.header_path.c_str())
         .set("class_name", args.class_name.c_str())
+        .set("cc_limit", std::to_string(args.call_max_length).c_str())
         .render_to(std::cout);
 
         

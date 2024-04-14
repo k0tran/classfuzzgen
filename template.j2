@@ -92,7 +92,7 @@ constexpr size_t m_size = std::size(m_list);
 
 class CallChain {
 public:
-    static const size_t LIMIT = 10; // TODO: make fuzgen param
+    static const size_t LIMIT = {{ cc_limit }};
 
     static int eval(const uint8_t *data, size_t size) {
         if (size == 0)
