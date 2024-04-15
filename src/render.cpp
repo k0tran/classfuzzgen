@@ -1,6 +1,6 @@
 #include "render.hpp"
 
-ClassRender::ClassRender(const ClassData &data, const std::string &template_name) : e(), t(e.parse_template(template_name)) {
+ClassRender::ClassRender(const ClassData &data, const std::string &template_name) : e(), t(e.parse_template(template_name)), arg_limit(1) {
     d["constructors"] = inja::json::array();
     d["methods"] = inja::json::array();
 
@@ -16,6 +16,9 @@ ClassRender::ClassRender(const ClassData &data, const std::string &template_name
                 {"is_pointer", a.kind == CXType_Pointer},
             });
         }
+
+        if (args.size() > arg_limit)
+            arg_limit = args.size();
 
         d["constructors"].push_back({
             {"args", args},
@@ -35,6 +38,9 @@ ClassRender::ClassRender(const ClassData &data, const std::string &template_name
             });
         }
 
+        if (args.size() > arg_limit)
+            arg_limit = args.size();
+
         CXString s = clang_getCursorSpelling(m.name);
         d["methods"].push_back({
             {"name", clang_getCString(s)},
@@ -42,6 +48,8 @@ ClassRender::ClassRender(const ClassData &data, const std::string &template_name
         });
         dispose_queue.push_back(s);
     }
+
+    d["arg_limit"] = arg_limit;
 }
 
 ClassRender &ClassRender::set(const char *key, const char *value) {

@@ -18,4 +18,5 @@ private:
     std::vector<CXString> dispose_queue;
     inja::Environment e;
     inja::Template t;
+    size_t arg_limit;
 };
