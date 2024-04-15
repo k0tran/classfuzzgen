@@ -61,7 +61,7 @@ struct MData {
 };
 
 {% for m in methods %}
-void method_{{ m.name }}({{ class_name }} *obj, const uint8_t *data) {
+void method_{{ loop.index }}({{ class_name }} *obj, const uint8_t *data) {
 {% if length(m.args) == 0 %}    obj->{{ m.name }}();
 {% else %}    size_t size = 0;
 
@@ -80,7 +80,7 @@ const MData m_list[] = {
             {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
         },
         .asize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
-        .fn = method_{{ m.name }},
+        .fn = method_{{ loop.index }},
     },{% endfor %}
 };
 
