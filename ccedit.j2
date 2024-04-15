@@ -201,6 +201,29 @@ public:
         return d_size;
     }
 
+    size_t insert_call(size_t cid, size_t n, size_t max_size) {
+        cid %= target::m_size;
+        n %= calls_size;
+        if (d2 == nullptr || n == 0)
+            return d_size;
+
+        size_t shift = target::m_list[cid].args.bytesize + 1;
+        if (d_size + shift > max_size || calls_size + 1 > LIMIT)
+            return d_size;
+        
+        for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
+            d2[i + shift] = d2[i];
+
+        d2[calls[n - 1]] = cid;
+        for (size_t i = 1; i < shift; ++i)
+            d2[calls[n - 1] + i] = 0;
+        d_size += shift;
+
+        update_chain();
+
+        return d_size;
+    }
+
 private:
     const uint8_t *d1;
     uint8_t *d2;
@@ -299,6 +322,8 @@ extern "C" size_t crossover(
 
 /// ------------------------------ MAIN FN ------------------------------
 
+const size_t MUTATION_RESERVE = 10;
+
 std::tuple<uint8_t *, size_t> load_file(const std::string &filename) {
     std::ifstream ifs(filename);
     if (!ifs)
@@ -308,7 +333,7 @@ std::tuple<uint8_t *, size_t> load_file(const std::string &filename) {
     std::streamsize size = ifs.tellg();
     ifs.seekg(0, std::ios_base::beg);
 
-    uint8_t *data = new uint8_t[size];
+    uint8_t *data = new uint8_t[size + MUTATION_RESERVE];
     if (!ifs.read(reinterpret_cast<char*>(data), size)) {
         delete [] data;
         return std::make_tuple(nullptr, 0);
@@ -337,6 +362,11 @@ int main(int argc, char **argv) {
     CLI::App *remove_call_cmd = app.add_subcommand("rmc", "Remove method from chain");
     remove_call_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
     remove_call_cmd->add_option("-n", p1, "N of the removing method")->required();
+
+    CLI::App *insert_call_cmd = app.add_subcommand("ins", "Insert new method to the chain (args get zeroed)");
+    insert_call_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
+    insert_call_cmd->add_option("-n", p1, "Place to insert new method")->required();
+    insert_call_cmd->add_option("-c", p2, "New method id")->required();
     
     app.require_subcommand(1);
 
@@ -385,6 +415,11 @@ int main(int argc, char **argv) {
         delete [] out;
     } else if (app.got_subcommand(remove_call_cmd)) {
         size = cc.remove_call(p1);
+
+        for (size_t i = 0; i < size; ++i)
+            std::cout << data[i];
+    } else if (app.got_subcommand(insert_call_cmd)) {
+        size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
 
         for (size_t i = 0; i < size; ++i)
             std::cout << data[i];
