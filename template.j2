@@ -142,6 +142,30 @@ public:
 
     CallChain(uint8_t * data, size_t size) : d1(data), d2(data), d_size(size) { update_chain(); }
 
+    size_t get_cid(size_t n) const {
+        if (n == 0)
+            return d1[0] % target::c_size;
+        return d1[calls[n - 1]] % target::m_size;
+    }
+
+    size_t get_size() const {
+        return calls_size;
+    }
+
+    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
+        size_t offset = n == 0 ? 1 : calls[n - 1] + 1;
+        size_t cid = get_cid(n);
+        const target::AData &ad = n == 0 ? target::c_list[cid].args : target::m_list[cid].args;
+
+        if (a > ad.size)
+            return nullptr;
+
+        for (size_t i = 0; i < a; ++i)
+            offset += ad.list[i].size;
+        
+        return d1 + offset;
+    }
+
 private:
     const uint8_t *d1;
     uint8_t *d2;
@@ -155,11 +179,11 @@ private:
             d1 = d2;
         
         calls_size = 0;
-        calls[0] = target::c_list[d1[0] % target::c_size].args.size + 1;
+        calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
 
         while (calls_size < LIMIT - 1 && calls[calls_size] < d_size) {
             calls_size++;
-            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.size + 1;
+            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
         }
 
         calls_size++;
