@@ -224,6 +224,22 @@ public:
         return d_size;
     }
 
+    size_t mutate_args(size_t n) {
+        if (d2 == nullptr)
+            return d_size;
+        
+        uint8_t *data = d2 + calls[n - 1] + 1;
+        size_t size = calls[n] - calls[n - 1];
+        // TODO: make mutations expandable
+
+        // Simulate libfuzzer modifications
+        for (size_t i = 0; i < size; ++i)
+            data[i] = 'a';
+
+        return d_size;
+    }
+
+
 private:
     const uint8_t *d1;
     uint8_t *d2;
@@ -367,6 +383,10 @@ int main(int argc, char **argv) {
     insert_call_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
     insert_call_cmd->add_option("-n", p1, "Place to insert new method")->required();
     insert_call_cmd->add_option("-c", p2, "New method id")->required();
+
+    CLI::App *mutate_args_cmd = app.add_subcommand("muta", "Set all arguments of call to 'a'");
+    mutate_args_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
+    mutate_args_cmd->add_option("-n", p1, "N of the modified method")->required();
     
     app.require_subcommand(1);
 
@@ -420,6 +440,11 @@ int main(int argc, char **argv) {
             std::cout << data[i];
     } else if (app.got_subcommand(insert_call_cmd)) {
         size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
+
+        for (size_t i = 0; i < size; ++i)
+            std::cout << data[i];
+    } else if (app.got_subcommand(mutate_args_cmd)) {
+        size = cc.mutate_args(p1);
 
         for (size_t i = 0; i < size; ++i)
             std::cout << data[i];
