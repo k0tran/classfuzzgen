@@ -7,5 +7,5 @@ fuzzer.cpp
 fuzzer
 crash-*
 
-# temporary
-targets/
+ccprint.cpp
+ccprint
