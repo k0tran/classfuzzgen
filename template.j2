@@ -18,11 +18,16 @@ struct Argument {
 
 const size_t ARG_LIMIT = {{ arg_limit }};
 
+struct AData {
+    Argument list[ARG_LIMIT];
+    size_t size;
+    size_t bytesize;
+};
+
 /// -------------- CONSTRUCTORS --------------
 
 struct CData {
-    Argument args[ARG_LIMIT];
-    size_t asize;
+    AData args;
     {{ class_name }} (*fn)(const uint8_t *);
 };
 
@@ -43,9 +48,12 @@ const CData c_list[] = {
     {% for c in constructors -%}
     {
         .args = {
-            {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
+            .list = {
+                {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
+            },
+            .size = {{ length(c.args) }},
+            .bytesize = 0{% for a in c.args %} + sizeof({{ a.name }}){% endfor %},
         },
-        .asize = 0{% for a in c.args %} + sizeof({{ a.name }}){% endfor %},
         .fn = constr_{{ loop.index }},
     },{% endfor %}
 };
@@ -55,8 +63,7 @@ constexpr size_t c_size = std::size(c_list);
 /// -------------- METHODS --------------
 
 struct MData {
-    Argument args[ARG_LIMIT];
-    size_t asize;
+    AData args;
     void (*fn)(Time *, const uint8_t *);
 };
 
@@ -77,9 +84,12 @@ const MData m_list[] = {
     {% for m in methods -%}
     {
         .args = {
-            {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
+            .list = {
+                {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
+            },
+            .size = {{ length(m.args) }},
+            .bytesize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
         },
-        .asize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
         .fn = method_{{ loop.index }},
     },{% endfor %}
 };
@@ -102,11 +112,11 @@ public:
         auto c = target::c_list[data[ptr] % target::c_size];
         ptr++;
 
-        if (ptr + c.asize > size)
+        if (ptr + c.args.size > size)
             return 1;
 
         auto obj = c.fn(data + ptr);
-        ptr += c.asize;
+        ptr += c.args.size;
 
         if (ptr >= size)
             return 1;
@@ -114,9 +124,9 @@ public:
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        while (ptr + m.asize <= size) {
+        while (ptr + m.args.size <= size) {
             m.fn(&obj, data + ptr);
-            ptr += m.asize;
+            ptr += m.args.size;
 
             if (ptr >= size)
                 return 1;
@@ -145,11 +155,11 @@ private:
             d1 = d2;
         
         calls_size = 0;
-        calls[0] = target::c_list[d1[0] % target::c_size].asize + 1;
+        calls[0] = target::c_list[d1[0] % target::c_size].args.size + 1;
 
         while (calls_size < LIMIT - 1 && calls[calls_size] < d_size) {
             calls_size++;
-            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].asize + 1;
+            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.size + 1;
         }
 
         calls_size++;
