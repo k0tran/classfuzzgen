@@ -273,6 +273,13 @@ private:
     }
 };
 
+#include <iomanip>
+
+void print_data_as_hex(const uint8_t *data, size_t size) {
+    for (int i = 0; i < size; ++i)
+        std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)data[i];
+}
+
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max_size, unsigned int seed) {
     if (size == 0)
         return size;
@@ -284,12 +291,46 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
 
     std::mt19937 rng(seed);
     switch (rng() % 3) {
-        case 0:
-            return cc.remove_call(rng());
-        case 1: 
-            return cc.insert_call(rng(), rng(), max_size);
-        case 2:
-            return cc.mutate_args(rng());
+        case 0: {
+            size_t n = rng() % cc.get_size();
+            std::cout << std::dec << "Delete call[" << n << "]: ";
+            print_data_as_hex(data, size);
+
+            size_t s =  cc.remove_call(n);
+            
+            std::cout << " -> ";
+            print_data_as_hex(data, s);
+            std::cout << std::endl;
+
+            return s;
+        }
+        case 1: {
+            size_t  cid = rng() % target::m_size,
+                    n = rng() % (cc.get_size() + 1);
+            std::cout << std::dec << "Insert call[" << cid << ", " << n << "]: ";
+            print_data_as_hex(data, size);
+            
+            size_t s =  cc.insert_call(cid, n, max_size);
+            
+            std::cout << " -> ";
+            print_data_as_hex(data, s);
+            std::cout << std::endl;
+
+            return s;
+        }
+        case 2: {
+            size_t n = rng() % cc.get_size();
+            std::cout << std::dec << "Mutate args[" << n << "]: ";
+            print_data_as_hex(data, size);
+
+            size_t s = cc.mutate_args(rng());
+
+            std::cout << " -> ";
+            print_data_as_hex(data, s);
+            std::cout << std::endl;
+
+            return s;
+        }
         default: 
             return size;
     }
