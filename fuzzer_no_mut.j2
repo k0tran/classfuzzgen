@@ -6,8 +6,6 @@
 #include <iterator> // for std::size
 #include <random>
 #include <iostream>
-#include <fstream>
-#include <iomanip>
 
 /// ------------------------------ DUMPED DATA ------------------------------
 
@@ -16,7 +14,6 @@ namespace target {
 struct Argument {
     bool is_pointer;
     size_t size;
-    const char *tname;
 };
 
 const size_t ARG_LIMIT = {{ arg_limit }};
@@ -52,7 +49,7 @@ const CData c_list[] = {
     {
         .args = {
             .list = {
-                {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},{% endfor %}
+                {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
             },
             .size = {{ length(c.args) }},
             .bytesize = 0{% for a in c.args %} + sizeof({{ a.name }}){% endfor %},
@@ -67,8 +64,7 @@ constexpr size_t c_size = std::size(c_list);
 
 struct MData {
     AData args;
-    const char *name;
-    void (*fn)(Time *, const uint8_t *);
+    void (*fn)({{ class_name }} *, const uint8_t *);
 };
 
 {% for m in methods %}
@@ -89,12 +85,11 @@ const MData m_list[] = {
     {
         .args = {
             .list = {
-                {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},{% endfor %}
+                {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }})},{% endfor %}
             },
             .size = {{ length(m.args) }},
             .bytesize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
         },
-        .name = "{{ m.name }}",
         .fn = method_{{ loop.index }},
     },{% endfor %}
 };
@@ -117,7 +112,7 @@ public:
         auto c = target::c_list[data[ptr] % target::c_size];
         ptr++;
 
-        if (ptr + c.args.size > size)
+        if (ptr + c.args.bytesize > size)
             return 1;
 
         auto obj = c.fn(data + ptr);
@@ -129,7 +124,8 @@ public:
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        while (ptr + m.args.bytesize <= size) {
+        size_t i = 1;
+        while (ptr + m.args.bytesize <= size && i++ < LIMIT) {
             m.fn(&obj, data + ptr);
             ptr += m.args.bytesize;
 
@@ -147,6 +143,12 @@ public:
 
     CallChain(uint8_t * data, size_t size) : d1(data), d2(data), d_size(size) { update_chain(); }
 
+    size_t get_call_start_idx(size_t n) {
+        if (n == 0)
+            return 0;
+        return calls[n - 1];
+    }
+
     size_t get_cid(size_t n) const {
         if (n == 0)
             return d1[0] % target::c_size;
@@ -157,16 +159,24 @@ public:
         return calls_size;
     }
 
-    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
+    size_t get_arg_offset(size_t n, size_t a) const {
         size_t offset = n == 0 ? 1 : calls[n - 1] + 1;
         size_t cid = get_cid(n);
         const target::AData &ad = n == 0 ? target::c_list[cid].args : target::m_list[cid].args;
 
         if (a > ad.size)
-            return nullptr;
+            return 0;
 
         for (size_t i = 0; i < a; ++i)
             offset += ad.list[i].size;
+        
+        return offset;
+    }
+
+    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
+        size_t offset = get_arg_offset(n, a);
+        if (offset == 0) // impossible cause first is always constructor id
+            return nullptr;
         
         return d1 + offset;
     }
@@ -180,92 +190,29 @@ private:
     size_t calls_size;
 
     void update_chain() {
+        if (d_size == 0) {
+            calls_size = 0;
+            return;
+        }
+
         if (d2 != nullptr && d1 != d2)
             d1 = d2;
         
-        calls_size = 0;
         calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
+        calls_size = 1;
 
-        while (calls_size < LIMIT - 1 && calls[calls_size] < d_size) {
-            calls_size++;
+        while (calls_size < LIMIT && calls[calls_size - 1] < d_size) {
             calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
-        }
-
-        if (calls_size == LIMIT - 1)
             calls_size++;
+        }
     }
 };
 
-// TODO: mutators
 
-/// ------------------------------ MAIN FN ------------------------------
 
-void print_data_as_hex(const uint8_t *data, size_t size) {
-    for (int i = 0; i < size; ++i)
-        std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)data[i] << " ";
-}
+/// ------------------------------ HARNESS FN ------------------------------
 
-int main(int argc, char **argv) {
-    if (argc != 2)
-        return 0;
-
-    std::ifstream ifs(argv[1]);
-    if (!ifs)
-        return 1;
-    
-    ifs.seekg(0, std::ios_base::end);
-    std::streamsize size = ifs.tellg();
-    ifs.seekg(0, std::ios_base::beg);
-
-    std::cout << "Loading " << size << " bytes" << std::endl;
-
-    uint8_t *data = new uint8_t[size];
-    if (!ifs.read(reinterpret_cast<char*>(data), size)) {
-        std::cout << "Reading error" << std::endl;
-        delete [] data;
-        return 1;
-    }
-
-    CallChain cc(data, size);
-
-    std::cout << "Found " << cc.get_size() << " calls" << std::endl;
-
-    if (cc.get_size() == 0) {
-        delete [] data;
-        return 0;
-    }
-
-    size_t cid = cc.get_cid(0);
-    std::cout << "{{ class_name }}(";
-
-    size_t n = target::c_list[cid].args.size;
-    if (n == 0)
-        std::cout << ")" << std::endl;
-    else {
-        for (size_t i = 0; i < n; ++i){
-            std::cout << std::endl << "    " << target::c_list[cid].args.list[i].tname << " : ";
-            print_data_as_hex(cc.get_arg_ptr(0, i), target::c_list[cid].args.list[i].size);
-            std::cout << std::endl;
-        }
-        std::cout << ")" << std::endl;
-    }
-
-    for (size_t i = 1; i < cc.get_size(); ++i) {
-        cid = cc.get_cid(i);
-        std::cout << target::m_list[cid].name << "(";
-        
-        n = target::m_list[cid].args.size;
-        if (n == 0)
-            std::cout << ")" << std::endl;
-        else {
-            for (size_t j = 0; j < n; ++j){
-                std::cout << std::endl << "    " << target::m_list[cid].args.list[j].tname << " : ";
-                print_data_as_hex(cc.get_arg_ptr(i, j), target::m_list[cid].args.list[j].size);
-                std::cout << std::endl;
-            }
-            std::cout << ")" << std::endl;
-        }
-    }
-
-    delete [] data;
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    CallChain::eval(data, size);
+    return 0;
 }

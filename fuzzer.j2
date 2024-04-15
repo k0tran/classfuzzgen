@@ -64,7 +64,7 @@ constexpr size_t c_size = std::size(c_list);
 
 struct MData {
     AData args;
-    void (*fn)(Time *, const uint8_t *);
+    void (*fn)({{ class_name }} *, const uint8_t *);
 };
 
 {% for m in methods %}
@@ -100,6 +100,8 @@ constexpr size_t m_size = std::size(m_list);
 
 /// ------------------------------ CALL CHAIN AND MUTATOR ------------------------------
 
+extern "C" size_t LLVMFuzzerMutate(uint8_t *data, size_t size, size_t max_size);
+
 class CallChain {
 public:
     static const size_t LIMIT = {{ cc_limit }};
@@ -124,7 +126,8 @@ public:
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        while (ptr + m.args.bytesize <= size) {
+        size_t i = 1;
+        while (ptr + m.args.bytesize <= size && i++ < LIMIT) {
             m.fn(&obj, data + ptr);
             ptr += m.args.bytesize;
 
@@ -142,6 +145,12 @@ public:
 
     CallChain(uint8_t * data, size_t size) : d1(data), d2(data), d_size(size) { update_chain(); }
 
+    size_t get_call_start_idx(size_t n) {
+        if (n == 0)
+            return 0;
+        return calls[n - 1];
+    }
+
     size_t get_cid(size_t n) const {
         if (n == 0)
             return d1[0] % target::c_size;
@@ -152,18 +161,89 @@ public:
         return calls_size;
     }
 
-    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
+    size_t get_arg_offset(size_t n, size_t a) const {
         size_t offset = n == 0 ? 1 : calls[n - 1] + 1;
         size_t cid = get_cid(n);
         const target::AData &ad = n == 0 ? target::c_list[cid].args : target::m_list[cid].args;
 
         if (a > ad.size)
-            return nullptr;
+            return 0;
 
         for (size_t i = 0; i < a; ++i)
             offset += ad.list[i].size;
         
+        return offset;
+    }
+
+    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
+        size_t offset = get_arg_offset(n, a);
+        if (offset == 0) // impossible cause first is always constructor id
+            return nullptr;
+        
         return d1 + offset;
+    }
+
+    size_t remove_call(size_t n) {
+        n %= calls_size;
+        if (d2 == nullptr || n == 0)
+            return d_size;
+
+        size_t shift = calls[n] - calls[n - 1];
+        for (size_t i = calls[n - 1]; i < d_size - shift; ++i)
+            d2[i] = d2[i + shift];
+        d_size -= shift;
+
+        update_chain();
+        
+        return d_size;
+    }
+
+    size_t insert_call(size_t cid, size_t n, size_t max_size) {
+        cid %= target::m_size;
+        n %= calls_size;
+        if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
+            return d_size;
+
+        size_t shift = target::m_list[cid].args.bytesize + 1;
+        if (d_size + shift > max_size)
+            return d_size;
+        
+        for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
+            d2[i + shift] = d2[i];
+
+        d2[calls[n - 1]] = cid;
+        for (size_t i = 1; i < shift; ++i)
+            d2[calls[n - 1] + i] = 0;
+        d_size += shift;
+
+        update_chain();
+
+        return d_size;
+    }
+
+    size_t mutate_args(size_t n) {
+        if (d2 == nullptr || d_size > 1 || calls_size == 0)
+            return d_size;
+        n %= calls_size;
+        
+        uint8_t *data; size_t size;
+        if (n == 0) {
+            data = d2 + 1;
+            size = calls[0] - 1;
+        } else {
+            data = d2 + calls[n - 1] + 1;
+            size = calls[n] - calls[n - 1];
+        }
+
+        if (size == 0)
+            return d_size;
+
+        std::cout << d_size << " " << size << " " << calls[n] << std::endl;
+        std::fflush(stdout);
+
+        LLVMFuzzerMutate(data, size, size);
+
+        return d_size;
     }
 
 private:
@@ -175,23 +255,82 @@ private:
     size_t calls_size;
 
     void update_chain() {
+        if (d_size == 0) {
+            calls_size = 0;
+            return;
+        }
+
         if (d2 != nullptr && d1 != d2)
             d1 = d2;
         
-        calls_size = 0;
         calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
+        calls_size = 1;
 
-        while (calls_size < LIMIT - 1 && calls[calls_size] < d_size) {
-            calls_size++;
+        while (calls_size < LIMIT && calls[calls_size - 1] < d_size) {
             calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
-        }
-
-        if (calls_size == LIMIT - 1)
             calls_size++;
+        }
     }
 };
 
-// TODO: mutators
+extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max_size, unsigned int seed) {
+    if (size == 0)
+        return size;
+
+    CallChain cc(data, size);
+
+    if (cc.get_size() == 0)
+        return size;
+
+    std::mt19937 rng(seed);
+    switch (rng() % 3) {
+        case 0:
+            return cc.remove_call(rng());
+        case 1: 
+            return cc.insert_call(rng(), rng(), max_size);
+        case 2:
+            return cc.mutate_args(rng());
+        default: 
+            return size;
+    }
+}
+
+extern "C" size_t LLVMFuzzerCustomCrossOver(
+    const uint8_t *data1, size_t size1,
+    const uint8_t *data2, size_t size2,
+    uint8_t *out, size_t max_out_size,
+    unsigned int seed
+) {
+    CallChain c1(data1, size1), c2(data2, size2);
+
+    if (c1.get_size() == 0 || c2.get_size() == 0) {
+        for (size_t i = 0; i < size1; ++i)
+            out[i] = 0;
+        return size1;
+    }
+
+    std::mt19937 rng(seed);
+    size_t p1, p2, i = 0;
+    do {
+        p1 = rng() % c1.get_size();
+        p2 = rng() % c2.get_size();
+    } while (c1.get_call_start_idx(p1) + c2.get_call_start_idx(p2) >= max_out_size + size2 && p1 + p2 >= CallChain::LIMIT + c2.get_size()  && i++ < 10);
+
+    if (i >= 10) {
+        for (size_t i = 0; i < size1; ++i)
+            out[i] = 0;
+        return max_out_size;
+    }
+
+    for (i = 0; i < c1.get_call_start_idx(p1); ++i)
+        out[i] = data1[i];
+    
+    for (size_t j = c2.get_call_start_idx(p2); j < size2; ++j, ++i)
+        out[i] = data2[j];
+    
+    return i;
+}
+
 
 /// ------------------------------ HARNESS FN ------------------------------
 

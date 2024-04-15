@@ -69,7 +69,7 @@ constexpr size_t c_size = std::size(c_list);
 struct MData {
     AData args;
     const char *name;
-    void (*fn)(Time *, const uint8_t *);
+    void (*fn)({{ class_name }} *, const uint8_t *);
 };
 
 {% for m in methods %}
@@ -108,7 +108,7 @@ constexpr size_t m_size = std::size(m_list);
 
 class CallChain {
 public:
-    static const size_t LIMIT = 10;
+    static const size_t LIMIT = {{ cc_limit }};
 
     static int eval(const uint8_t *data, size_t size) {
         if (size == 0)
@@ -118,7 +118,7 @@ public:
         auto c = target::c_list[data[ptr] % target::c_size];
         ptr++;
 
-        if (ptr + c.args.size > size)
+        if (ptr + c.args.bytesize > size)
             return 1;
 
         auto obj = c.fn(data + ptr);
@@ -130,7 +130,8 @@ public:
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        while (ptr + m.args.bytesize <= size) {
+        size_t i = 0;
+        while (ptr + m.args.bytesize <= size && i++ < LIMIT) {
             m.fn(&obj, data + ptr);
             ptr += m.args.bytesize;
 
@@ -204,11 +205,11 @@ public:
     size_t insert_call(size_t cid, size_t n, size_t max_size) {
         cid %= target::m_size;
         n %= calls_size;
-        if (d2 == nullptr || n == 0)
+        if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
             return d_size;
 
         size_t shift = target::m_list[cid].args.bytesize + 1;
-        if (d_size + shift > max_size || calls_size + 1 > LIMIT)
+        if (d_size + shift > max_size)
             return d_size;
         
         for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
@@ -238,7 +239,6 @@ public:
         return d_size;
     }
 
-
 private:
     const uint8_t *d1;
     uint8_t *d2;
@@ -248,19 +248,21 @@ private:
     size_t calls_size;
 
     void update_chain() {
+        if (d_size == 0) {
+            calls_size = 0;
+            return;
+        }
+
         if (d2 != nullptr && d1 != d2)
             d1 = d2;
         
-        calls_size = 0;
         calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
+        calls_size = 1;
 
-        while (calls_size < LIMIT - 1 && calls[calls_size] < d_size) {
-            calls_size++;
+        while (calls_size < LIMIT && calls[calls_size - 1] < d_size) {
             calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
-        }
-
-        if (calls_size == LIMIT - 1)
             calls_size++;
+        }
     }
 };
 
@@ -275,7 +277,7 @@ void print_cc(const CallChain &cc) {
     std::cout << cc.get_size() << " calls:" << std::endl;
 
     size_t cid = cc.get_cid(0);
-    std::cout << "Time(";
+    std::cout << "{{ class_name }}(";
 
     size_t n = target::c_list[cid].args.size;
     if (n == 0)
