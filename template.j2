@@ -112,11 +112,11 @@ public:
         auto c = target::c_list[data[ptr] % target::c_size];
         ptr++;
 
-        if (ptr + c.args.size > size)
+        if (ptr + c.args.bytesize > size)
             return 1;
 
         auto obj = c.fn(data + ptr);
-        ptr += c.args.size;
+        ptr += c.args.bytesize;
 
         if (ptr >= size)
             return 1;
@@ -124,9 +124,9 @@ public:
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        while (ptr + m.args.size <= size) {
+        while (ptr + m.args.bytesize <= size) {
             m.fn(&obj, data + ptr);
-            ptr += m.args.size;
+            ptr += m.args.bytesize;
 
             if (ptr >= size)
                 return 1;
@@ -186,7 +186,8 @@ private:
             calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
         }
 
-        calls_size++;
+        if (calls_size == LIMIT - 1)
+            calls_size++;
     }
 };
 
