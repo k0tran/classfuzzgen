@@ -230,7 +230,6 @@ public:
         
         uint8_t *data = d2 + calls[n - 1] + 1;
         size_t size = calls[n] - calls[n - 1];
-        // TODO: make mutations expandable
 
         // Simulate libfuzzer modifications
         for (size_t i = 0; i < size; ++i)
