@@ -31,7 +31,7 @@ clang++ fuzzer.cpp examples/time.cpp -g -std=c++17 -fsanitize=fuzzer,address -o 
 ### Templates
 
 fuzzer.j2 -- default fuzzer template\
-ccprint.j2 -- template for decoding callchains from crash-* files and printing it to stdout. All arguments printed in hex (Usage: `./ccprint <filename>`)
+ccedit.j2 -- template for editing callchains from crash-* files
 
 ### Options
 

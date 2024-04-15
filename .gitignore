@@ -5,7 +5,7 @@ zig-out/
 
 fuzzer.cpp
 fuzzer
-crash-*
+crash*
 
-ccprint.cpp
-ccprint
+ccedit.cpp
+ccedit
