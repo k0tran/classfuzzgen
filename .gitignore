@@ -9,3 +9,7 @@ crash*
 
 ccedit.cpp
 ccedit
+
+# AFL++
+input/
+output/
