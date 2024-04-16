@@ -359,34 +359,48 @@ std::tuple<uint8_t *, size_t> load_file(const std::string &filename) {
     return std::make_tuple(data, size);
 }
 
+std::tuple<uint8_t *, size_t> load_hex(const std::string &hexstr) {
+    if (hexstr.size() % 2 != 0)
+        return std::make_tuple(nullptr, 0);
+    
+    size_t size = hexstr.size() / 2;
+    uint8_t *data = new uint8_t[size + MUTATION_RESERVE];
+    std::string tmp;
+    for (size_t i = 0; i < size; ++i) {
+        tmp = hexstr.substr(i * 2, 2);
+        data[i] = std::strtol(tmp.c_str(), NULL, 16);
+    }
+
+    return std::make_tuple(data, size);
+}
+
 int main(int argc, char **argv) {
     CLI::App app("CallChain editor");
     argv = app.ensure_utf8(argv);
 
-    std::string file1;
+    std::string file, hex;
+    auto incc = app.add_option_group("Input CC", "Input to load CC from");
+    incc->add_option("-f,--file", file, "Load from file")->check(CLI::ExistingFile);
+    incc->add_option("--hex", hex, "Load from hex");
+    incc->require_option(1);
 
     CLI::App *print_cmd = app.add_subcommand("print", "Print CallChain");
-    print_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
 
     std::string file2;
     size_t p1, p2;
     CLI::App *crossover_cmd = app.add_subcommand("crossover", "Crossover two chains");
-    crossover_cmd->add_option("--f1", file1, "First file to read from")->check(CLI::ExistingFile)->required();
     crossover_cmd->add_option("--f2", file2, "Second file to read from")->check(CLI::ExistingFile)->required();
     crossover_cmd->add_option("--p1", p1, "Point to cut off first chain")->required();
     crossover_cmd->add_option("--p2", p2, "Point to continue from the second chain")->required();
 
     CLI::App *remove_call_cmd = app.add_subcommand("rmc", "Remove method from chain");
-    remove_call_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
     remove_call_cmd->add_option("-n", p1, "N of the removing method")->required();
 
     CLI::App *insert_call_cmd = app.add_subcommand("ins", "Insert new method to the chain (args get zeroed)");
-    insert_call_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
     insert_call_cmd->add_option("-n", p1, "Place to insert new method")->required();
     insert_call_cmd->add_option("-c", p2, "New method id")->required();
 
     CLI::App *mutate_args_cmd = app.add_subcommand("muta", "Set all arguments of call to 'a'");
-    mutate_args_cmd->add_option("-f,--file", file1, "File to read CC from")->check(CLI::ExistingFile)->required();
     mutate_args_cmd->add_option("-n", p1, "N of the modified method")->required();
     
     app.require_subcommand(1);
@@ -394,7 +408,10 @@ int main(int argc, char **argv) {
     CLI11_PARSE(app, argc, argv);
 
     uint8_t *data; size_t size;
-    std::tie(data, size) = load_file(file1);
+    if (!file.empty())
+        std::tie(data, size) = load_file(file);
+    else
+        std::tie(data, size) = load_hex(hex);
     if (size == 0) {
         delete [] data;
         return 1;
