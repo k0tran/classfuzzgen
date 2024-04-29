@@ -355,7 +355,9 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
                 // size_t cnt = 1 + rng() % 5; // 1 - 5
                 // for (size_t i = 0; i < cnt - 1; ++i)
                 //     s = cc.remove_call(rng());
-                s = cc.remove_call(rng());
+                if (cc.get_size() > 2) // We don't want to make it's empty
+                    s = cc.remove_call(rng());
+                break;
             }
             case 1: {
                 // TODO: make applicable many times
@@ -363,13 +365,18 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
                 // for (size_t i = 0; i < cnt; ++i)
                 //     s = cc.insert_call(rng(), rng(), max_size);
                 s = cc.insert_call(rng(), rng(), max_size);
+                break;
             }
-            case 2:
+            case 2: {
                 // TODO: make applicable many times
                 s = cc.duplicate_call(rng(), rng(), max_size);
-            default:
+                break;
+            }
+            default: {
                 // TODO: make applicable many times
                 s = cc.mutate_args(rng());
+                break;
+            }
         }
     
     // TODO: add probabilty to this mutation

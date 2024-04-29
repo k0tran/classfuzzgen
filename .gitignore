@@ -3,10 +3,12 @@
 zig-cache/
 zig-out/
 
-fuzzer.cpp
-fuzzer
+fuzzer*.cpp
+fuzzer*
 crash*
 oom*
+fuzz*.log
+slow-unit-*
 
 ccedit.cpp
 ccedit
