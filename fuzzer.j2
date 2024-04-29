@@ -369,7 +369,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
                 s = cc.duplicate_call(rng(), rng(), max_size);
             default:
                 // TODO: make applicable many times
-                s = cc.mutate_args(rng(), rng());
+                s = cc.mutate_args(rng());
         }
     
     // TODO: add probabilty to this mutation
