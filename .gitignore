@@ -6,6 +6,7 @@ zig-out/
 fuzzer.cpp
 fuzzer
 crash*
+oom*
 
 ccedit.cpp
 ccedit
