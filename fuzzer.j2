@@ -229,19 +229,82 @@ public:
         uint8_t *data; size_t size;
         if (n == 0) {
             data = d2 + 1;
-            size = calls[0] - 1;
+            size = calls[0] == 0 ? 0 : calls[0] - 1;
         } else {
             data = d2 + calls[n - 1] + 1;
             size = calls[n] - calls[n - 1];
         }
 
-        if (size == 0)
+        if (size == 0) {
+            n = 0;
+            do {
+                if (n == 0) {
+                    data = d2 + 1;
+                    size = calls[0] == 0 ? 0 : calls[0] - 1;
+                } else {
+                    data = d2 + calls[n - 1] + 1;
+                    size = calls[n] - calls[n - 1];
+                }
+            } while (n < calls_size && size == 0 && n++);
+            
+            if (n >= calls_size || size == 0)
+                return d_size;
+        }
+
+        size_t s;
+        do {
+            s = LLVMFuzzerMutate(data, size, size);
+        } while (s != size);
+
+        return d_size;
+    }
+
+    size_t swap_calls(size_t p1, size_t p2) {
+        p1 %= calls_size;
+        p2 %= calls_size;
+        if (d2 == nullptr || calls_size < 3 || p1 == 0 || p2 == 0)
             return d_size;
 
-        std::cout << d_size << " " << size << " " << calls[n] << std::endl;
-        std::fflush(stdout);
+        uint8_t buf[16 + 1]; // TODO: MAKE IT ARG TOTAL SIZE DEPENDENT
+        
+        for (size_t i = calls[p1 - 1]; i < calls[p1]; ++i)
+            buf[i - calls[p1 - 1]] = d2[i];
+        
+        size_t max = d_size;
+        remove_call(p1);
+        insert_call(buf[0], p2, max);
 
-        LLVMFuzzerMutate(data, size, size);
+        for (size_t i = calls[p2 - 1]; i < calls[p2]; ++i)
+            d2[i] = buf[i - calls[p2 - 1]];
+
+        update_chain();
+
+        return d_size;
+    }
+
+    size_t duplicate_call(size_t from, size_t to, size_t max_size) {
+        to %= calls_size;
+        from %= calls_size;
+        if (d2 == nullptr || from == 0 || to == 0)
+            return d_size;
+        
+        uint8_t buf[16 + 1]; // TODO MAKE IT ARG TOTAL SIZE DEPENDENT
+        
+        size_t offset = calls[from - 1];
+        buf[0] = d2[offset];
+        offset++;
+        for(size_t i = offset; i < calls[from]; ++i)
+            buf[i - offset] = d2[i];
+        
+        size_t past = d_size;
+        insert_call(buf[0], to, max_size);
+        if (past == d_size)
+            return d_size;
+
+        for (size_t i = calls[to - 1]; i < calls[to]; ++i)
+            d2[i] = buf[i - calls[to - 1]];
+
+        update_chain();
 
         return d_size;
     }
