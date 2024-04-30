@@ -1,8 +1,12 @@
 #include "time.hpp"
 
 #include <csignal> // for segfault
+#include <chrono>
+#include <iostream>
+#include <thread>
 
-const double DELAY = 1;
+#define DELAY 800
+#define sleep(x) std::this_thread::sleep_for(std::chrono::milliseconds(x))
 
 Time::Time() : t(0) { sleep(DELAY); }
 
