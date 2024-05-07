@@ -22,6 +22,16 @@ def run_rm_test(cchex, n, expected):
 
     return proc.stdout.strip() == expected
 
+def run_ins_test(cchex, n, c, expected):
+    proc = subprocess.run(
+        ['./ccedit_test', '-x', cchex, '-oh', 'ins', '-n', str(n), '-c', str(c)],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+
+    return proc.stdout.strip() == expected
+
 def test_class(hppfile, cppfile, class_name, clen, tests):
     # Render ccedit.j2
     print('Rendering class')
@@ -49,8 +59,17 @@ def test_class(hppfile, cppfile, class_name, clen, tests):
             sys.exit(1)
         else:
             print(f'Test #{i} completed')
+    print('')
     
-    print()
+    # Run ins tests
+    print('Testing ins')
+    for i, t in enumerate(tests['ins']):
+        if not run_ins_test(*t):
+            print('Error on test: ', t)
+            sys.exit(1)
+        else:
+            print(f'Test #{i} completed')
+    print('')
 
 TIME_TESTS = {
     'crossover': [
@@ -74,6 +93,19 @@ TIME_TESTS = {
         ['fe00aaaaaaaa0100bbbbbbbb02', 2, 'fe00aaaaaaaa0102'],
         ['fe00aaaaaaaa0100bbbbbbbb02', 3, 'fe00aaaaaaaa0100bbbbbbbb'],
         ['fe00aaaaaaaa0100bbbbbbbb02', 0, 'fe0100bbbbbbbb02'],
+    ],
+    'ins': [
+        ['fe', 0, 0, 'fe0000000000'],
+        ['fe', 0, 1, 'fe01'],
+        ['fe', 0, 2, 'fe02'],
+        ['fe', 0, 3, 'fe03'],
+        ['fe', 0, 4, 'fe04'],
+
+        ['fe010203', 0, 4, 'fe04010203'],
+        ['fe010203', 1, 4, 'fe01040203'],
+        ['fe010203', 2, 4, 'fe01020403'],
+        ['fe010203', 3, 4, 'fe01020304'],
+        ['fe010203', 4, 4, 'fe04010203'],
     ]
 }
 
@@ -101,6 +133,14 @@ WALKER_TESTS = {
         ['fe2c2c2e2e', 1, 'fe2c2e2e'],
         ['fe2c2c2e2e', 2, 'fe2c2c2e'],
         ['fe2c2c2e2e', 3, 'fe2c2c2e'],
+    ],
+    'ins': [
+        ['fe2c2c2e2e', 0, 0, 'fe002c2c2e2e'],
+        ['fe2c2c2e2e', 1, 0, 'fe2c002c2e2e'],
+        ['fe2c2c2e2e', 2, 0, 'fe2c2c002e2e'],
+        ['fe2c2c2e2e', 3, 0, 'fe2c2c2e002e'],
+        ['fe2c2c2e2e', 4, 0, 'fe2c2c2e2e00'],
+        ['fe2c2c2e2e', 5, 0, 'fe002c2c2e2e'],
     ]
 }
 
