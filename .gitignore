@@ -12,6 +12,8 @@ slow-unit-*
 
 ccedit.cpp
 ccedit
+ccedit_test.cpp
+ccedit_test
 
 # AFL++
 input/
