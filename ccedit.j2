@@ -120,7 +120,7 @@ constexpr size_t m_size = std::size(m_list);
 class CallChain {
 public:
     /// MAX amount of methods allowed (class uses static memory)
-    static const size_t MLIMIT = 1000; 
+    static const size_t MLIMIT = {{ cc_limit }}; 
 
     /// Evaluate CC while reading
     static int eval(const uint8_t *data, size_t size) {
@@ -280,9 +280,56 @@ public:
         d_size -= offset;
 
         // Fix m array
+        int shift = offset - (m[n + 1] - m[n]);
         for (size_t i = n + 1; i < m_size - 1; ++i)
-            m[i] += offset - (m[i + 1] - m[i]);
+            m[i] += offset;
         m_size--;
+
+        return d_size;
+    }
+
+    /// Insert method
+    /// Returns new byte length
+    size_t ins_m(size_t n, size_t id, size_t max_size) {
+        id %= target::m_size;
+        size_t args = target::m_list[id].args.bytesize;
+        if (is_empty() || is_const() || d_size + 1 + args > max_size)
+            return d_size;
+        
+        // mod + 1 because we want to add methods to the start and end
+        n = m_size == 0 ? 0 : n % (m_size + 1);
+
+        // If it's last then it's simple
+        if (n == m_size) {
+            // Create new empty call
+            d2[d_size] = id;
+            for (size_t i = 0; i < args; ++i)
+                d2[d_size + 1 + i] = 0;
+            
+            // Update class info
+            m[m_size] = d_size;
+            d_size += 1 + args;
+            m_size++;
+
+            return d_size;
+        }
+        
+        // Shift everything
+        for (size_t i = d_size - 1; i >= m[n]; --i)
+            d2[i + 1 + args] = d2[i];
+        
+        // Set call
+        d2[m[n]] = id;
+        for (size_t i = 0; i < args; ++i)
+            d2[m[n] + 1 + i] = 0;
+                
+        // Fix m array
+        int offset = (1 + args) - (m[n + 1] - m[n]);
+        for (size_t i = n + 1; i < m_size; ++i)
+            m[i] += offset;
+        m[m_size] = d_size;
+        d_size += 1 + args;
+        m_size++;
 
         return d_size;
     }
@@ -309,7 +356,7 @@ private:
             return;
 
         size_t offset = 1 + target::c_list[d1[0] % target::c_size].args.bytesize;
-        if (offset >= d_size)
+        if (offset > d_size)
             return;
         
         c_size = offset;
@@ -323,30 +370,6 @@ private:
             m_size--;
     }
 };
-
-
-//     size_t insert_call(size_t cid, size_t n, size_t max_size) {
-//         cid %= target::m_size;
-//         n %= (calls_size + 1);
-//         if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
-//             return d_size;
-
-//         size_t shift = target::m_list[cid].args.bytesize + 1;
-//         if (d_size + shift > max_size)
-//             return d_size;
-        
-//         for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
-//             d2[i + shift] = d2[i];
-
-//         d2[calls[n - 1]] = cid;
-//         for (size_t i = 1; i < shift; ++i)
-//             d2[calls[n - 1] + i] = 0;
-//         d_size += shift;
-
-//         update_chain();
-
-//         return d_size;
-//     }
 
 //     size_t mutate_args(size_t n) {
 //         if (d2 == nullptr)
@@ -553,7 +576,7 @@ int main(int argc, char **argv) {
 
     auto ins_cmd = app.add_subcommand("ins", "Insert method into CC (all args get zeroed)");
     ins_cmd->add_option("-n", n1, "Add method to the n-th place")->default_val(0);
-    ins_cmd->add_option("-c", n2, "Call id");
+    auto ins_c_option = ins_cmd->add_option("-c", n2, "Call id");
 
     auto seta_cmd = app.add_subcommand("seta", "Set argument(s) of the call");
     // TODO: make setter usable
@@ -640,6 +663,12 @@ int main(int argc, char **argv) {
             n1 = rng();
         
         size = cc.rm_m(n1);
+    } if (app.got_subcommand(ins_cmd)) {
+        // If call id not set then use random
+        if (ins_c_option->count() == 0)
+            n2 = rng();
+        
+        size = cc.ins_m(n1, n2, size + MUTATION_RESERVE);
     } else {
         // TODO: other subcommands
     }
@@ -671,20 +700,6 @@ int main(int argc, char **argv) {
 
     // Free
     delete [] data;
-
-    // } else if (app.got_subcommand(insert_call_cmd)) {
-    //     size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
-
-    //     for (size_t i = 0; i < size; ++i)
-    //         std::cout << data[i];
-    // } else if (app.got_subcommand(mutate_args_cmd)) {
-    //     size = cc.mutate_args(p1);
-
-    //     for (size_t i = 0; i < size; ++i)
-    //         std::cout << data[i];
-    // }
-
-    // delete [] data;
 
     return 0;
 }
