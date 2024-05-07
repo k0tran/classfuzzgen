@@ -233,7 +233,8 @@ public:
         if (is_methodless())
             throw std::logic_error("Attemplt to get method argument of CC with no methods");
 
-        auto m_args = target::m_list[d1[m[n % m_size]] % target::m_size].args;
+        n %= m_size;
+        auto m_args = target::m_list[d1[m[n]] % target::m_size].args;
 
         if (m_args.size == 0)
             throw std::logic_error("Attempt to get method argument from a method with no arguments");
@@ -244,10 +245,10 @@ public:
         for (i = 0; i < arg_n; ++i)
             bytes += m_args.list[i].size;
         
-        return std::make_tuple(d1 + bytes, m_args.list[i].size);
+        return std::make_tuple(d1 + m[n] + bytes, m_args.list[i].size);
     }
 
-    // Get offset of method
+    /// Get offset of method
     size_t get_m_offset(size_t n) const {
         if (is_empty())
             return 0;
@@ -255,6 +256,35 @@ public:
             return c_size;
         
         return m[n % m_size];
+    }
+
+    /// Remove method from CC
+    /// Returns new byte len
+    size_t rm_m(size_t n) {
+        if (is_empty() || is_methodless() || is_const())
+            return d_size;
+
+        n %= m_size;
+
+        // If it's last then just cut it off
+        if (n == m_size - 1) {
+            d_size = m[n];
+            m_size--;
+            return d_size;
+        }
+
+        // Shift everything in d2
+        size_t offset = m[n + 1] - m[n];
+        for (size_t i = m[n + 1]; i < d_size; ++i)
+            d2[i - offset] = d2[i];
+        d_size -= offset;
+
+        // Fix m array
+        for (size_t i = n + 1; i < m_size - 1; ++i)
+            m[i] += offset - (m[i + 1] - m[i]);
+        m_size--;
+
+        return d_size;
     }
 
 private:
@@ -294,21 +324,6 @@ private:
     }
 };
 
-
-//     size_t remove_call(size_t n) {
-//         n %= calls_size;
-//         if (d2 == nullptr || n == 0)
-//             return d_size;
-
-//         size_t shift = calls[n] - calls[n - 1];
-//         for (size_t i = calls[n - 1]; i < d_size - shift; ++i)
-//             d2[i] = d2[i + shift];
-//         d_size -= shift;
-
-//         update_chain();
-        
-//         return d_size;
-//     }
 
 //     size_t insert_call(size_t cid, size_t n, size_t max_size) {
 //         cid %= target::m_size;
@@ -425,10 +440,11 @@ void print_raw(uint8_t *data, size_t size) {
 }
 
 void print_cc(CallChain &cc) {
-    std::cout << "Total " << cc.get_size() << " calls:" << std::endl;
+    std::cout << "Total " << cc.get_size() << " calls" << std::endl << std::endl;
+    std::cout << "n start id call" << std::endl << "--------------" << std::endl;
 
     size_t cid = cc.get_cid();
-    std::cout << "0 0 {{ class_name }}(";
+    std::cout << "- 0 " << cid << " {{ class_name }}(";
 
     if (cc.is_c_argless()) {}
     else {
@@ -448,7 +464,7 @@ void print_cc(CallChain &cc) {
 
     for (size_t i = 0; i < cc.get_size(); ++i) {
         cid = cc.get_mid(i);
-        std::cout << std::dec << i + 1 << " " << cc.get_m_offset(i) << " " << target::m_list[cid].name << "(";
+        std::cout << std::dec << i << " " << cc.get_m_offset(i) << " " << cid << " " << target::m_list[cid].name << "(";
 
         if (cc.is_m_argless(i)) {}
         else {
@@ -533,7 +549,7 @@ int main(int argc, char **argv) {
     auto co_n2_option = crossover_cmd->add_option("-2,--n2", n2, "Point to continue second chain (takes all starting from p2)");
 
     auto rm_cmd = app.add_subcommand("rm", "Remove method from CC");
-    rm_cmd->add_option("-n", n1, "Remove n-th method (starting from zero)")->default_val(0);
+    auto rm_n_option = rm_cmd->add_option("-n", n1, "Remove n-th method (starting from zero)");
 
     auto ins_cmd = app.add_subcommand("ins", "Insert method into CC (all args get zeroed)");
     ins_cmd->add_option("-n", n1, "Add method to the n-th place")->default_val(0);
@@ -584,6 +600,10 @@ int main(int argc, char **argv) {
     }
     CallChain cc(data, size);
 
+    // Init random if needed
+    std::random_device rd;
+    std::mt19937 rng(rd());
+
     // CLI11 can't give out repeated subcommands so we process one at the time
     if (app.got_subcommand(crossover_cmd)) {
         // Load data2
@@ -599,8 +619,6 @@ int main(int argc, char **argv) {
         }
 
         // Randomize n1, n2 if needed
-        std::random_device rd;
-        std::mt19937 rng(rd());
         if (co_n1_option->count() == 0)
             n1 = rng();
         if (co_n2_option->count() == 0)
@@ -616,6 +634,12 @@ int main(int argc, char **argv) {
         size  = result_size;
         cc = CallChain(result, result_size);
 
+    } else if (app.got_subcommand(rm_cmd)) {
+        // Randomize n if not set
+        if (rm_n_option->count() == 0)
+            n1 = rng();
+        
+        size = cc.rm_m(n1);
     } else {
         // TODO: other subcommands
     }
@@ -648,39 +672,6 @@ int main(int argc, char **argv) {
     // Free
     delete [] data;
 
-
-    // if (app.got_subcommand(print_cmd)) {
-    //     print_cc(cc);
-    // } else if (app.got_subcommand(crossover_cmd)) {
-    //     uint8_t *data2; size_t size2;
-    //     std::tie(data2, size2) = load_file(file2);
-    //     if (size2 == 0) {
-    //         delete [] data;
-    //         return 1;
-    //     }
-
-    //     CallChain cc2(data2, size2);
-    //     if (cc2.get_size() == 0) {
-    //         std::cout << "Second chain is empty" << std::endl;
-    //         delete [] data;
-    //         delete [] data2;
-    //         return 0;
-    //     }
-
-    //     size_t out_size = size + size2;
-    //     uint8_t *out = new uint8_t[out_size];
-    //     out_size = crossover(data, size, data2, size2, out, out_size, p1, p2);
-
-    //     for (size_t i = 0; i < out_size; ++i)
-    //         std::cout << out[i];
-
-    //     delete [] data2;
-    //     delete [] out;
-    // } else if (app.got_subcommand(remove_call_cmd)) {
-    //     size = cc.remove_call(p1);
-
-    //     for (size_t i = 0; i < size; ++i)
-    //         std::cout << data[i];
     // } else if (app.got_subcommand(insert_call_cmd)) {
     //     size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
 
