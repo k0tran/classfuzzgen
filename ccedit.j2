@@ -14,14 +14,17 @@
 
 namespace target {
 
+/// Structure representing argument
 struct Argument {
     bool is_pointer;
     size_t size;
     const char *tname;
 };
 
+/// Max amount of arguments in a call
 const size_t ARG_LIMIT = {{ arg_limit }};
 
+/// Summarized data about arguments
 struct AData {
     Argument list[ARG_LIMIT];
     size_t size;
@@ -30,6 +33,7 @@ struct AData {
 
 /// -------------- CONSTRUCTORS --------------
 
+/// Constructor data
 struct CData {
     AData args;
     {{ class_name }} (*fn)(const uint8_t *);
@@ -48,6 +52,7 @@ struct CData {
 {% endif %}{{ "};" }}
 {% endfor %}
 
+/// List of all constructors info
 const CData c_list[] = {
     {% for c in constructors -%}
     {
@@ -66,6 +71,7 @@ constexpr size_t c_size = std::size(c_list);
 
 /// -------------- METHODS --------------
 
+/// Method data
 struct MData {
     AData args;
     const char *name;
@@ -85,6 +91,7 @@ void method_{{ loop.index }}({{ class_name }} *obj, const uint8_t *data) {
 {% endif %}{{ "};"}}
 {% endfor %}
 
+/// List of all method info
 const MData m_list[] = {
     {% for m in methods -%}
     {
@@ -106,10 +113,16 @@ constexpr size_t m_size = std::size(m_list);
 
 /// ------------------------------ CALL CHAIN AND MUTATOR ------------------------------
 
+/**
+ * This is class for working with Call Chains (mutations and other userful functions)
+ * Note that parsing takes time and for simple classes it's better to used standart binary mutations
+*/
 class CallChain {
 public:
-    static const size_t LIMIT = {{ cc_limit }};
+    /// MAX amount of methods allowed (class uses static memory)
+    static const size_t MLIMIT = 1000; 
 
+    /// Evaluate CC while reading
     static int eval(const uint8_t *data, size_t size) {
         if (size == 0)
             return 1;
@@ -124,20 +137,22 @@ public:
         auto obj = c.fn(data + ptr);
         ptr += c.args.bytesize;
 
-        if (ptr >= size)
+        if (ptr == size) // CC with only constructor
             return 1;
 
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        size_t i = 0;
-        while (ptr + m.args.bytesize <= size && i++ < LIMIT) {
+        for (size_t i = 0; i < MLIMIT; ++i) {
+            if (ptr + m.args.bytesize > size)
+                break;
+            
             m.fn(&obj, data + ptr);
             ptr += m.args.bytesize;
 
-            if (ptr >= size)
+            if (ptr == size) // No room for method id
                 return 1;
-
+            
             m = target::m_list[data[ptr] % target::m_size];
             ptr++;
         }
@@ -145,202 +160,318 @@ public:
         return 0;
     }
 
-    CallChain(const uint8_t *data, size_t size) : d1(data), d2(nullptr), d_size(size) { update_chain(); }
+    CallChain(const uint8_t *data, size_t size) : d1(data), d2(nullptr), d_size(size) { update(); }
+    
+    CallChain(uint8_t *data, size_t size) : d1(data), d2(data), d_size(size) { update(); }
 
-    CallChain(uint8_t * data, size_t size) : d1(data), d2(data), d_size(size) { update_chain(); }
-
-    size_t get_call_start_idx(size_t n) {
-        if (n == 0)
-            return 0;
-        return calls[n - 1];
+    inline bool is_const() const {
+        return d2 == nullptr;
     }
 
-    size_t get_cid(size_t n) const {
-        if (n == 0)
+    inline bool is_empty() const {
+        return c_size == 0;
+    }
+
+    inline bool is_methodless() const {
+        return m_size == 0;
+    }
+
+    /// Returns amount of methods (not counting constructor)
+    inline size_t get_size() const {
+        return m_size;
+    }
+
+    /// Get constructor id
+    size_t get_cid() const {
+        if (!is_empty())
             return d1[0] % target::c_size;
-        return d1[calls[n - 1]] % target::m_size;
+        throw std::logic_error("Attempt to get constructor id of an empty CC");
     }
 
-    size_t get_size() const {
-        return calls_size;
+    /// Get method id
+    size_t get_mid(size_t n) const {
+        if (!is_empty())
+            return d1[m[n % m_size]] % target::m_size;
+        throw std::logic_error("Attempt to get method id of an empty CC");
     }
 
-    size_t get_arg_offset(size_t n, size_t a) const {
-        size_t offset = n == 0 ? 1 : calls[n - 1] + 1;
-        size_t cid = get_cid(n);
-        const target::AData &ad = n == 0 ? target::c_list[cid].args : target::m_list[cid].args;
+    /// Is constructor argless
+    bool is_c_argless() const {
+        if (is_empty())
+            throw std::logic_error("Attempt to check if constructor argless when there is no constructor");
+        return c_size == 1;
+    }
 
-        if (a > ad.size)
+    /// Get arg bytearray for constructor
+    std::tuple<const uint8_t *, size_t> get_c_arg(size_t arg_n) const {
+        if (is_empty())
+            throw std::logic_error("Attemplt to get constructor argument of an empty CC");
+
+        auto c_args = target::c_list[d1[0] % target::c_size].args;
+
+        if (c_args.size == 0)
+            throw std::logic_error("Attempt to get contructor argument from a contructor with no arguments");
+
+        arg_n %= c_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += c_args.list[i].size;
+        
+        return std::make_tuple(d1 + bytes, c_args.list[i].size);
+    }
+
+    bool is_m_argless(size_t n) const {
+        if (is_methodless())
+            throw std::logic_error("Attempt to check if method argless when there is no methods");
+        auto m_args = target::m_list[d1[m[n % m_size]] % target::m_size].args;
+        return m_args.size == 0; 
+    }
+
+    /// Get arg bytearray for method
+    std::tuple<const uint8_t *, size_t> get_m_arg(size_t n, size_t arg_n) const {
+        if (is_methodless())
+            throw std::logic_error("Attemplt to get method argument of CC with no methods");
+
+        auto m_args = target::m_list[d1[m[n % m_size]] % target::m_size].args;
+
+        if (m_args.size == 0)
+            throw std::logic_error("Attempt to get method argument from a method with no arguments");
+
+        arg_n %= m_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += m_args.list[i].size;
+        
+        return std::make_tuple(d1 + bytes, m_args.list[i].size);
+    }
+
+    // Get offset of method
+    size_t get_m_offset(size_t n) const {
+        if (is_empty())
             return 0;
-
-        for (size_t i = 0; i < a; ++i)
-            offset += ad.list[i].size;
+        if (is_methodless())
+            return c_size;
         
-        return offset;
-    }
-
-    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
-        size_t offset = get_arg_offset(n, a);
-        if (offset == 0) // impossible cause first is always constructor id
-            return nullptr;
-        
-        return d1 + offset;
-    }
-
-    size_t remove_call(size_t n) {
-        n %= calls_size;
-        if (d2 == nullptr || n == 0)
-            return d_size;
-
-        size_t shift = calls[n] - calls[n - 1];
-        for (size_t i = calls[n - 1]; i < d_size - shift; ++i)
-            d2[i] = d2[i + shift];
-        d_size -= shift;
-
-        update_chain();
-        
-        return d_size;
-    }
-
-    size_t insert_call(size_t cid, size_t n, size_t max_size) {
-        cid %= target::m_size;
-        n %= (calls_size + 1);
-        if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
-            return d_size;
-
-        size_t shift = target::m_list[cid].args.bytesize + 1;
-        if (d_size + shift > max_size)
-            return d_size;
-        
-        for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
-            d2[i + shift] = d2[i];
-
-        d2[calls[n - 1]] = cid;
-        for (size_t i = 1; i < shift; ++i)
-            d2[calls[n - 1] + i] = 0;
-        d_size += shift;
-
-        update_chain();
-
-        return d_size;
-    }
-
-    size_t mutate_args(size_t n) {
-        if (d2 == nullptr)
-            return d_size;
-        
-        uint8_t *data = d2 + calls[n - 1] + 1;
-        size_t size = calls[n] - calls[n - 1];
-
-        // Simulate libfuzzer modifications
-        for (size_t i = 0; i < size; ++i)
-            data[i] = 'a';
-
-        return d_size;
+        return m[n % m_size];
     }
 
 private:
+    /// Source buffer data
     const uint8_t *d1;
     uint8_t *d2;
     size_t d_size;
 
-    size_t calls[LIMIT];
-    size_t calls_size;
+    /// Constructor section length
+    size_t c_size;
 
-    void update_chain() {
-        if (d_size == 0) {
-            calls_size = 0;
+    // Method offsets
+    size_t m[MLIMIT];
+    size_t m_size;
+
+    /// Update method data depending on d1
+    void update() {
+        m_size = 0;
+        c_size = 0;
+
+        if (d_size == 0)
             return;
-        }
 
-        if (d2 != nullptr && d1 != d2)
-            d1 = d2;
+        size_t offset = 1 + target::c_list[d1[0] % target::c_size].args.bytesize;
+        if (offset >= d_size)
+            return;
         
-        calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
-        calls_size = 1;
-
-        while (calls_size < LIMIT && calls[calls_size - 1] < d_size) {
-            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
-            calls_size++;
+        c_size = offset;
+        
+        size_t ptr;
+        for (ptr = offset; ptr < d_size && m_size < MLIMIT; ++m_size) {
+            m[m_size] = ptr;
+            ptr += 1 + target::m_list[d1[ptr] % target::m_size].args.bytesize;
         }
+        if (ptr != d_size) // Check if we have incomplete call
+            m_size--;
     }
 };
 
-/// ------------------------------ COMMANDS ------------------------------
 
-void print_data_as_hex(const uint8_t *data, size_t size) {
-    for (int i = 0; i < size; ++i)
-        std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)data[i] << " ";
-}
+//     size_t remove_call(size_t n) {
+//         n %= calls_size;
+//         if (d2 == nullptr || n == 0)
+//             return d_size;
 
-void print_cc(const CallChain &cc) {
-    std::cout << cc.get_size() << " calls:" << std::endl;
+//         size_t shift = calls[n] - calls[n - 1];
+//         for (size_t i = calls[n - 1]; i < d_size - shift; ++i)
+//             d2[i] = d2[i + shift];
+//         d_size -= shift;
 
-    size_t cid = cc.get_cid(0);
-    std::cout << "{{ class_name }}(";
-
-    size_t n = target::c_list[cid].args.size;
-    if (n == 0)
-        std::cout << ")" << std::endl;
-    else {
-        for (size_t i = 0; i < n; ++i){
-            std::cout << std::endl << "    " << target::c_list[cid].args.list[i].tname << " : ";
-            print_data_as_hex(cc.get_arg_ptr(0, i), target::c_list[cid].args.list[i].size);
-            std::cout << std::endl;
-        }
-        std::cout << ")" << std::endl;
-    }
-
-    for (size_t i = 1; i < cc.get_size(); ++i) {
-        cid = cc.get_cid(i);
-        std::cout << target::m_list[cid].name << "(";
+//         update_chain();
         
-        n = target::m_list[cid].args.size;
-        if (n == 0)
-            std::cout << ")" << std::endl;
-        else {
-            for (size_t j = 0; j < n; ++j){
-                std::cout << std::endl << "    " << target::m_list[cid].args.list[j].tname << " : ";
-                print_data_as_hex(cc.get_arg_ptr(i, j), target::m_list[cid].args.list[j].size);
-                std::cout << std::endl;
-            }
-            std::cout << ")" << std::endl;
-        }
-    }
-}
+//         return d_size;
+//     }
 
-extern "C" size_t crossover(
+//     size_t insert_call(size_t cid, size_t n, size_t max_size) {
+//         cid %= target::m_size;
+//         n %= (calls_size + 1);
+//         if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
+//             return d_size;
+
+//         size_t shift = target::m_list[cid].args.bytesize + 1;
+//         if (d_size + shift > max_size)
+//             return d_size;
+        
+//         for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
+//             d2[i + shift] = d2[i];
+
+//         d2[calls[n - 1]] = cid;
+//         for (size_t i = 1; i < shift; ++i)
+//             d2[calls[n - 1] + i] = 0;
+//         d_size += shift;
+
+//         update_chain();
+
+//         return d_size;
+//     }
+
+//     size_t mutate_args(size_t n) {
+//         if (d2 == nullptr)
+//             return d_size;
+        
+//         uint8_t *data = d2 + calls[n - 1] + 1;
+//         size_t size = calls[n] - calls[n - 1];
+
+//         // Simulate libfuzzer modifications
+//         for (size_t i = 0; i < size; ++i)
+//             data[i] = 'a';
+
+//         return d_size;
+//     }
+
+/// ------------------------------ MUTATOR FNs ------------------------------
+
+std::tuple<uint8_t *, size_t> crossover(
     const uint8_t *data1, size_t size1,
     const uint8_t *data2, size_t size2,
-    uint8_t *out, size_t max_out_size,
-    size_t p1, 
-    size_t p2
+    size_t n1, size_t n2
 ) {
-    CallChain c1(data1, size1), c2(data2, size2);
+    CallChain cc1(data1, size1), cc2(data2, size2);
 
-    if (c1.get_size() == 0 || c2.get_size() == 0) {
-        for (size_t i = 0; i < max_out_size; ++i)
-            out[i] = 0;
-        return max_out_size;
+    if (cc1.is_empty() || cc2.is_methodless()) {
+        uint8_t *data = new uint8_t[size1];
+        for (size_t i = 0; i < size1; ++i)
+            data[i] = data1[i];
+        return std::make_tuple(data, size1);
     }
 
-    p1 %= c1.get_size();
-    p2 %= c2.get_size();
-    
+    // Mod with +1 is because:
+    // 0 - we take constructor only
+    // cc1.get_size() - we take whole CC
+    n1 %= (cc1.get_size() + 1);
+
+    // Here we take methods from p2 to cc2.get_size()
+    // Note that we can't take 0 methods
+    n2 %= cc2.get_size();
+
+    size_t size = n1 + (size2 - n2);
+    uint8_t *data = new uint8_t[size];
+
+    size_t limit = n1 == cc1.get_size() ? size1 : cc1.get_m_offset(n1);
     size_t i;
-    for (i = 0; i < c1.get_call_start_idx(p1); ++i)
-        out[i] = data1[i];
+    for (i = 0; i < limit; ++i)
+        data[i] = data1[i];
     
-    for (size_t j = c2.get_call_start_idx(p2); j < size2; ++j, ++i)
-        out[i] = data2[j];
-    
-    return i;
+    for (size_t j = cc2.get_m_offset(n2); j < size2; ++j, ++i)
+        data[i] = data2[j];
+
+    return std::make_tuple(data, size);
 }
 
-/// ------------------------------ MAIN FN ------------------------------
+/// ------------------------------ PRINT FNs ------------------------------
 
-const size_t MUTATION_RESERVE = 10;
+void print_class_fns() {
+    for (size_t i = 0; i < target::c_size; ++i, std::cout << ")" << std::endl) {
+        std::cout << i << " {{ class_name }}(";
+        if (target::c_list[i].args.size == 0) // Prevent underflow in for
+            continue;
+            
+        size_t last = target::c_list[i].args.size;
+        for (size_t j = 0; j < last - 1; ++j)
+            std::cout << target::c_list[i].args.list[j].tname << "(" << target::c_list[i].args.list[j].size << ")" << ", ";
+        std::cout << target::c_list[i].args.list[last - 1].tname << "(" << target::c_list[i].args.list[last - 1].size << ")";
+    }
 
+    std::cout << std::endl;
+
+    for (size_t i = 0; i < target::m_size; ++i, std::cout << ")" << std::endl) {
+        std::cout << i << " " << target::m_list[i].name << "(";
+        if (target::m_list[i].args.size == 0)
+            continue;
+        
+        size_t last = target::m_list[i].args.size;
+        for (size_t j = 0; j < last - 1; ++j)
+            std::cout << target::m_list[i].args.list[j].tname << "(" << target::m_list[i].args.list[j].size << ")" << ", ";
+        std::cout << target::m_list[i].args.list[last - 1].tname << "(" << target::m_list[i].args.list[last - 1].size << ")";
+    }
+}
+
+void print_hex(const uint8_t *data, size_t size) {
+    for (size_t i = 0; i < size; ++i)
+        std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)data[i];
+}
+
+void print_raw(uint8_t *data, size_t size) {
+    for (size_t i = 0; i < size; ++i)
+        std::cout << (char)data[i];
+}
+
+void print_cc(CallChain &cc) {
+    std::cout << "Total " << cc.get_size() << " calls:" << std::endl;
+
+    size_t cid = cc.get_cid();
+    std::cout << "0 0 {{ class_name }}(";
+
+    if (cc.is_c_argless()) {}
+    else {
+        auto c_args = target::c_list[cid].args;
+        for (size_t i = 0; i < c_args.size; ++i) {
+            std::cout << std::endl << "    " << c_args.list[i].tname << " : ";
+            
+            const uint8_t *a_data;
+            size_t a_size;
+            std::tie(a_data, a_size) = cc.get_c_arg(i);
+
+            print_hex(a_data, a_size);
+            std::cout << std::endl;
+        }
+    }
+    std::cout << ")" << std::endl;
+
+    for (size_t i = 0; i < cc.get_size(); ++i) {
+        cid = cc.get_mid(i);
+        std::cout << std::dec << i + 1 << " " << cc.get_m_offset(i) << " " << target::m_list[cid].name << "(";
+
+        if (cc.is_m_argless(i)) {}
+        else {
+            auto m_args = target::m_list[cid].args;
+            for (size_t j = 0; j < m_args.size; ++j) {
+                std::cout << std::endl << "    " << m_args.list[j].tname << " : ";
+            
+                const uint8_t *a_data;
+                size_t a_size;
+                std::tie(a_data, a_size) = cc.get_m_arg(i, j);
+
+                print_hex(a_data, a_size);
+                std::cout << std::endl;
+            }
+        }
+        std::cout << ")" << std::endl;
+    }
+}
+/// ------------------------------ LOAD FNs ------------------------------
+
+const size_t MUTATION_RESERVE = 100; // In bytes
+
+/// Sets pointer to nullptr on error 
 std::tuple<uint8_t *, size_t> load_file(const std::string &filename) {
     std::ifstream ifs(filename);
     if (!ifs)
@@ -359,6 +490,7 @@ std::tuple<uint8_t *, size_t> load_file(const std::string &filename) {
     return std::make_tuple(data, size);
 }
 
+/// Sets pointer to nullptr on error
 std::tuple<uint8_t *, size_t> load_hex(const std::string &hexstr) {
     if (hexstr.size() % 2 != 0)
         return std::make_tuple(nullptr, 0);
@@ -374,101 +506,194 @@ std::tuple<uint8_t *, size_t> load_hex(const std::string &hexstr) {
     return std::make_tuple(data, size);
 }
 
+/// ------------------------------ MAIN FN ------------------------------
+
+enum class CCOutFormat : int { Hex, Raw, Printable, Quiet };
+
 int main(int argc, char **argv) {
     CLI::App app("CallChain editor");
     argv = app.ensure_utf8(argv);
 
-    std::string file, hex;
-    auto incc = app.add_option_group("Input CC", "Input to load CC from");
-    incc->add_option("-f,--file", file, "Load from file")->check(CLI::ExistingFile);
-    incc->add_option("--hex", hex, "Load from hex");
-    incc->require_option(1);
+    std::string file_in, hex_in;
+    bool dump_class(false);
+    auto cc_option = app.add_option_group("Call Chain (CC)", "Input CC to work with");
+    cc_option->add_option("-f,--file", file_in, "Load from file")->check(CLI::ExistingFile);
+    cc_option->add_option("-x,--hex", hex_in, "Load from hex");
+    cc_option->add_flag("-d,--dump-class", dump_class, "Print class info");
+    cc_option->require_option(1);
 
-    CLI::App *print_cmd = app.add_subcommand("print", "Print CallChain");
+    std::string file_in2, hex_in2;
+    size_t n1, n2;
+    auto crossover_cmd = app.add_subcommand("crossover", "Crossover two CC's");
+    auto co_cc_option = crossover_cmd->add_option_group("Second CC", "Second CC to crossover with");
+    co_cc_option->add_option("-f,--file", file_in2, "Load from file")->check(CLI::ExistingFile);
+    co_cc_option->add_option("-x,--hex", hex_in2, "Load from hex");
+    co_cc_option->require_option(1);
+    auto co_n1_option = crossover_cmd->add_option("-1,--n1", n1, "Point to cut of first chain (takes all before p1)");
+    auto co_n2_option = crossover_cmd->add_option("-2,--n2", n2, "Point to continue second chain (takes all starting from p2)");
 
-    std::string file2;
-    size_t p1, p2;
-    CLI::App *crossover_cmd = app.add_subcommand("crossover", "Crossover two chains");
-    crossover_cmd->add_option("--f2", file2, "Second file to read from")->check(CLI::ExistingFile)->required();
-    crossover_cmd->add_option("--p1", p1, "Point to cut off first chain")->required();
-    crossover_cmd->add_option("--p2", p2, "Point to continue from the second chain")->required();
+    auto rm_cmd = app.add_subcommand("rm", "Remove method from CC");
+    rm_cmd->add_option("-n", n1, "Remove n-th method (starting from zero)")->default_val(0);
 
-    CLI::App *remove_call_cmd = app.add_subcommand("rmc", "Remove method from chain");
-    remove_call_cmd->add_option("-n", p1, "N of the removing method")->required();
+    auto ins_cmd = app.add_subcommand("ins", "Insert method into CC (all args get zeroed)");
+    ins_cmd->add_option("-n", n1, "Add method to the n-th place")->default_val(0);
+    ins_cmd->add_option("-c", n2, "Call id");
 
-    CLI::App *insert_call_cmd = app.add_subcommand("ins", "Insert new method to the chain (args get zeroed)");
-    insert_call_cmd->add_option("-n", p1, "Place to insert new method")->required();
-    insert_call_cmd->add_option("-c", p2, "New method id")->required();
-
-    CLI::App *mutate_args_cmd = app.add_subcommand("muta", "Set all arguments of call to 'a'");
-    mutate_args_cmd->add_option("-n", p1, "N of the modified method")->required();
+    auto seta_cmd = app.add_subcommand("seta", "Set argument(s) of the call");
+    // TODO: make setter usable
     
-    app.require_subcommand(1);
+    auto swap_cmd = app.add_subcommand("swap", "Swap two calls");
+    swap_cmd->add_option("-1,--n1", n1, "First call id to swap with");
+    swap_cmd->add_option("-2,--n2", n2, "Second call id to swap with");
+    
+    auto dup_cmd = app.add_subcommand("dup", "Duplicate call");
+    dup_cmd->add_option("-1,--n1", "Which call duplicate");
+    dup_cmd->add_option("-2,--n2", "Position of the duplicated call");
+
+    bool eval(false);
+    auto eval_option = app.add_flag("-e,--eval", eval, "Evaluate CC after all modifications");
+
+    CCOutFormat out_mode;
+    std::map<std::string, CCOutFormat> out_format_map{
+        {"h", CCOutFormat::Hex},
+        {"r", CCOutFormat::Raw},
+        {"p", CCOutFormat::Printable},
+        {"q", CCOutFormat::Quiet}
+    };
+    auto out_format_option = app.add_option("-o,--out", out_mode, "Output format")
+        ->default_val(CCOutFormat::Printable)
+        ->transform(CLI::CheckedTransformer(out_format_map, CLI::ignore_case).description("Output format"));
 
     CLI11_PARSE(app, argc, argv);
 
+    // Print all class data indexed
+    if (dump_class) {
+        print_class_fns();
+        return 0;
+    }
+
+    // Load
     uint8_t *data; size_t size;
-    if (!file.empty())
-        std::tie(data, size) = load_file(file);
+    if (!file_in.empty())
+        std::tie(data, size) = load_file(file_in);
     else
-        std::tie(data, size) = load_hex(hex);
-    if (size == 0) {
-        delete [] data;
+        std::tie(data, size) = load_hex(hex_in);
+    if (data == nullptr) {
+        std::cerr << "Loading error" << std::endl;
         return 1;
     }
     CallChain cc(data, size);
 
-    if (cc.get_size() == 0) {
-        std::cout << "Found an empty chain" << std::endl;
-        delete [] data;
-        return 0;
-    }
-
-    if (app.got_subcommand(print_cmd)) {
-        print_cc(cc);
-    } else if (app.got_subcommand(crossover_cmd)) {
+    // CLI11 can't give out repeated subcommands so we process one at the time
+    if (app.got_subcommand(crossover_cmd)) {
+        // Load data2
         uint8_t *data2; size_t size2;
-        std::tie(data2, size2) = load_file(file2);
-        if (size2 == 0) {
+        if (!file_in2.empty())
+            std::tie(data2, size2) = load_file(file_in2);
+        else
+            std::tie(data2, size2) = load_hex(hex_in2);
+        if (data2 == nullptr) {
+            std::cerr << "CO Loading error" << std::endl;
             delete [] data;
             return 1;
         }
 
-        CallChain cc2(data2, size2);
-        if (cc2.get_size() == 0) {
-            std::cout << "Second chain is empty" << std::endl;
-            delete [] data;
-            delete [] data2;
-            return 0;
-        }
+        // Randomize n1, n2 if needed
+        std::random_device rd;
+        std::mt19937 rng(rd());
+        if (co_n1_option->count() == 0)
+            n1 = rng();
+        if (co_n2_option->count() == 0)
+            n2 = rng();
+        
+        uint8_t *result; size_t result_size;
+        std::tie(result, result_size) = crossover(data, size, data2, size2, n1, n2);
 
-        size_t out_size = size + size2;
-        uint8_t *out = new uint8_t[out_size];
-        out_size = crossover(data, size, data2, size2, out, out_size, p1, p2);
-
-        for (size_t i = 0; i < out_size; ++i)
-            std::cout << out[i];
-
+        // We want output of result so
+        delete [] data;
         delete [] data2;
-        delete [] out;
-    } else if (app.got_subcommand(remove_call_cmd)) {
-        size = cc.remove_call(p1);
+        data = result; // for later free purposes
+        size  = result_size;
+        cc = CallChain(result, result_size);
 
-        for (size_t i = 0; i < size; ++i)
-            std::cout << data[i];
-    } else if (app.got_subcommand(insert_call_cmd)) {
-        size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
-
-        for (size_t i = 0; i < size; ++i)
-            std::cout << data[i];
-    } else if (app.got_subcommand(mutate_args_cmd)) {
-        size = cc.mutate_args(p1);
-
-        for (size_t i = 0; i < size; ++i)
-            std::cout << data[i];
+    } else {
+        // TODO: other subcommands
     }
 
+    // Print output
+    switch (out_mode) {
+        case CCOutFormat::Hex: {
+            print_hex(data, size);
+            std::cout << std::endl;
+            break;
+        }
+        case CCOutFormat::Printable: {
+            print_cc(cc);
+            break;
+        }
+        case CCOutFormat::Raw: {
+            print_raw(data, size);
+            break;
+        }
+        case CCOutFormat::Quiet: {
+            break;
+        }
+        default: throw std::logic_error("Unknown CCOutFormat type");
+    }
+
+    // Evaluate
+    if (eval)
+        CallChain::eval(data, size);
+
+    // Free
     delete [] data;
+
+
+    // if (app.got_subcommand(print_cmd)) {
+    //     print_cc(cc);
+    // } else if (app.got_subcommand(crossover_cmd)) {
+    //     uint8_t *data2; size_t size2;
+    //     std::tie(data2, size2) = load_file(file2);
+    //     if (size2 == 0) {
+    //         delete [] data;
+    //         return 1;
+    //     }
+
+    //     CallChain cc2(data2, size2);
+    //     if (cc2.get_size() == 0) {
+    //         std::cout << "Second chain is empty" << std::endl;
+    //         delete [] data;
+    //         delete [] data2;
+    //         return 0;
+    //     }
+
+    //     size_t out_size = size + size2;
+    //     uint8_t *out = new uint8_t[out_size];
+    //     out_size = crossover(data, size, data2, size2, out, out_size, p1, p2);
+
+    //     for (size_t i = 0; i < out_size; ++i)
+    //         std::cout << out[i];
+
+    //     delete [] data2;
+    //     delete [] out;
+    // } else if (app.got_subcommand(remove_call_cmd)) {
+    //     size = cc.remove_call(p1);
+
+    //     for (size_t i = 0; i < size; ++i)
+    //         std::cout << data[i];
+    // } else if (app.got_subcommand(insert_call_cmd)) {
+    //     size = cc.insert_call(p2, p1, size + MUTATION_RESERVE);
+
+    //     for (size_t i = 0; i < size; ++i)
+    //         std::cout << data[i];
+    // } else if (app.got_subcommand(mutate_args_cmd)) {
+    //     size = cc.mutate_args(p1);
+
+    //     for (size_t i = 0; i < size; ++i)
+    //         std::cout << data[i];
+    // }
+
+    // delete [] data;
 
     return 0;
 }
