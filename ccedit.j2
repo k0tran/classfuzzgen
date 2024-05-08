@@ -177,8 +177,13 @@ public:
     }
 
     /// Returns amount of methods (not counting constructor)
-    inline size_t get_size() const {
+    inline size_t get_msize() const {
         return m_size;
+    }
+
+    /// Get used bytes size
+    inline size_t get_dsize() const {
+        return d_size;
     }
 
     /// Get constructor id
@@ -377,7 +382,7 @@ private:
     /// Source buffer data
     const uint8_t *d1;
     uint8_t *d2;
-    size_t d_size;
+    size_t d_size; // Note that d_size is data **used**, not allocated/stored
 
     /// Constructor section length
     size_t c_size;
@@ -405,8 +410,10 @@ private:
             m[m_size] = ptr;
             ptr += 1 + target::m_list[d1[ptr] % target::m_size].args.bytesize;
         }
-        if (ptr != d_size) // Check if we have incomplete call
+        if (ptr != d_size) { // Check if we have incomplete call
             m_size--;
+            d_size = ptr;
+        }
     }
 };
 
@@ -428,17 +435,17 @@ std::tuple<uint8_t *, size_t> crossover(
 
     // Mod with +1 is because:
     // 0 - we take constructor only
-    // cc1.get_size() - we take whole CC
-    n1 %= (cc1.get_size() + 1);
+    // cc1.get_msize() - we take whole CC
+    n1 %= (cc1.get_msize() + 1);
 
-    // Here we take methods from p2 to cc2.get_size()
+    // Here we take methods from p2 to cc2.get_msize()
     // Note that we can't take 0 methods
-    n2 %= cc2.get_size();
+    n2 %= cc2.get_msize();
 
     size_t size = n1 + (size2 - n2);
     uint8_t *data = new uint8_t[size];
 
-    size_t limit = n1 == cc1.get_size() ? size1 : cc1.get_m_offset(n1);
+    size_t limit = n1 == cc1.get_msize() ? size1 : cc1.get_m_offset(n1);
     size_t i;
     for (i = 0; i < limit; ++i)
         data[i] = data1[i];
@@ -488,7 +495,7 @@ void print_raw(uint8_t *data, size_t size) {
 }
 
 void print_cc(CallChain &cc) {
-    std::cout << "Total " << cc.get_size() << " calls" << std::endl << std::endl;
+    std::cout << "Total " << cc.get_msize() << " methods" << std::endl << std::endl;
     std::cout << "n start id call" << std::endl << "--------------" << std::endl;
 
     size_t cid = cc.get_cid();
@@ -510,7 +517,7 @@ void print_cc(CallChain &cc) {
     }
     std::cout << ")" << std::endl;
 
-    for (size_t i = 0; i < cc.get_size(); ++i) {
+    for (size_t i = 0; i < cc.get_msize(); ++i) {
         cid = cc.get_mid(i);
         std::cout << std::dec << i << " " << cc.get_m_offset(i) << " " << cid << " " << target::m_list[cid].name << "(";
 
