@@ -221,6 +221,25 @@ public:
         return std::make_tuple(d1 + bytes, c_args.list[i].size);
     }
 
+    /// Get mutable arg bytearray for constructor
+    std::tuple<uint8_t *, size_t> get_c_arg(size_t arg_n) {
+        if (is_empty() || is_const())
+            throw std::logic_error("Attemplt to get constructor argument of an empty/const CC");
+
+        auto c_args = target::c_list[d2[0] % target::c_size].args;
+
+        if (c_args.size == 0)
+            throw std::logic_error("Attempt to get contructor argument from a contructor with no arguments");
+
+        arg_n %= c_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += c_args.list[i].size;
+        
+        return std::make_tuple(d2 + bytes, c_args.list[i].size);
+    }
+
     bool is_m_argless(size_t n) const {
         if (is_methodless())
             throw std::logic_error("Attempt to check if method argless when there is no methods");
@@ -231,7 +250,7 @@ public:
     /// Get arg bytearray for method
     std::tuple<const uint8_t *, size_t> get_m_arg(size_t n, size_t arg_n) const {
         if (is_methodless())
-            throw std::logic_error("Attemplt to get method argument of CC with no methods");
+            throw std::logic_error("Attempt to get method argument of CC with no methods");
 
         n %= m_size;
         auto m_args = target::m_list[d1[m[n]] % target::m_size].args;
@@ -246,6 +265,26 @@ public:
             bytes += m_args.list[i].size;
         
         return std::make_tuple(d1 + m[n] + bytes, m_args.list[i].size);
+    }
+
+    /// Get mutable arg bytearray for method
+    std::tuple<uint8_t *, size_t> get_m_arg(size_t n, size_t arg_n) {
+        if (is_methodless() || is_const())
+            throw std::logic_error("Attempt to get method argument of CC with no methods or const");
+
+        n %= m_size;
+        auto m_args = target::m_list[d2[m[n]] % target::m_size].args;
+
+        if (m_args.size == 0)
+            throw std::logic_error("Attempt to get method argument from a method with no arguments");
+
+        arg_n %= m_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += m_args.list[i].size;
+        
+        return std::make_tuple(d2 + m[n] + bytes, m_args.list[i].size);
     }
 
     /// Get offset of method
@@ -370,20 +409,6 @@ private:
             m_size--;
     }
 };
-
-//     size_t mutate_args(size_t n) {
-//         if (d2 == nullptr)
-//             return d_size;
-        
-//         uint8_t *data = d2 + calls[n - 1] + 1;
-//         size_t size = calls[n] - calls[n - 1];
-
-//         // Simulate libfuzzer modifications
-//         for (size_t i = 0; i < size; ++i)
-//             data[i] = 'a';
-
-//         return d_size;
-//     }
 
 /// ------------------------------ MUTATOR FNs ------------------------------
 
@@ -578,8 +603,12 @@ int main(int argc, char **argv) {
     ins_cmd->add_option("-n", n1, "Add method to the n-th place")->default_val(0);
     auto ins_c_option = ins_cmd->add_option("-c", n2, "Call id");
 
+    std::string hex_arg;
+    int call_n, call_k;
     auto seta_cmd = app.add_subcommand("seta", "Set argument(s) of the call");
-    // TODO: make setter usable
+    seta_cmd->add_option("-n", call_n, "Call n (positive for methods, -1 for constructor)")->default_val(-1);
+    seta_cmd->add_option("-k", call_k, "Argument id (-1 to set all)")->default_val(-1);
+    auto seta_arg_option = seta_cmd->add_option("-x,--hex", hex_arg, "Argument value in hex (random if not provided)");
     
     auto swap_cmd = app.add_subcommand("swap", "Swap two calls");
     swap_cmd->add_option("-1,--n1", n1, "First call id to swap with");
@@ -669,6 +698,48 @@ int main(int argc, char **argv) {
             n2 = rng();
         
         size = cc.ins_m(n1, n2, size + MUTATION_RESERVE);
+    } else if (app.got_subcommand(seta_cmd)) {
+        uint8_t *arg;
+        size_t arg_size;
+
+        // Get arg bytearray
+        size_t k = call_k == -1 ? 0 : call_k;
+        if (call_n == -1) {
+            std::tie(arg, arg_size) = cc.get_c_arg(k);
+            if (call_k == -1)
+                arg_size = target::c_list[cc.get_cid()].args.bytesize;
+        } else {
+            std::tie(arg, arg_size) = cc.get_m_arg(call_n, k);
+            if (call_k == -1)
+                arg_size = target::m_list[cc.get_mid(call_n)].args.bytesize;
+        }
+
+        // If arg_hex is not provided then fill with random values
+        if (seta_arg_option->count() == 0) {
+            for (size_t i = 0; i < arg_size; ++i)
+                arg[i] = rng();
+        } else {
+            // Fix odd length
+            if (hex_arg.size() % 2 != 0)
+                hex_arg.insert(hex_arg.begin(), '0');
+            size_t hex_size = hex_arg.size() / 2;
+
+            // Fill with zeroes if needed
+            size_t diff = (hex_size - arg_size) * 2;
+            if (diff != 0) {
+                std::string fill;
+                for (size_t i = 0; i < diff; ++i)
+                    fill.push_back('0');
+                hex_arg.insert(0, fill);
+            }
+
+            // Set value
+            std::string tmp;
+            for (size_t i = 0; i < arg_size; ++i) {
+                tmp = hex_arg.substr(i * 2, 2);
+                arg[i] = std::strtol(tmp.c_str(), NULL, 16);
+            }
+        }
     } else {
         // TODO: other subcommands
     }
