@@ -47,11 +47,15 @@ def ins_test_map(n, c):
 def seta_test_map(n, k, arg_hex):
     return ['seta', '-n', str(n), '-k', str(k), '-x', arg_hex]
 
+def set_test_map(n, c):
+    return ['set', '-n', str(n), '-c', str(c)]
+
 TEST_ARG_MAPPERS = {
     'crossover': co_test_map,
     'rm': rm_test_map,
     'ins': ins_test_map,
     'seta': seta_test_map,
+    'set': set_test_map,
 }
 
 TIME_TESTS = {
@@ -96,6 +100,15 @@ TIME_TESTS = {
         
         ['ff2c2c2c2c2cc6c3bbbbbbbb2c', 2, -1, 'aaaaaaaa', 'ff2c2c2c2c2cc6c3aaaaaaaa2c'],
         ['ff2c2c2c2c2cc6c3bbbbbbbb2c', 2, 0, 'aaaaaaaa', 'ff2c2c2c2c2cc6c3aaaaaaaa2c'],
+    ],
+    'set': [
+        ['ffaaaaaaaa2c2e', -1, 0, '002c2e'],
+        ['ffaaaaaaaa2c2e', -1, 1, '01000000002c2e'],
+
+        ['ffaaaaaaaa2c2e', 0, 1, 'ffaaaaaaaa012e'],
+        ['ffaaaaaaaa2c2e', 0, 0, 'ffaaaaaaaa00000000002e'],
+        ['ffaaaaaaaa2c2e', 1, 0, 'ffaaaaaaaa2c0000000000'],
+        ['ffaaaaaaaa2c2e', 2, 0, 'ffaaaaaaaa00000000002e'],
     ],
 }
 
