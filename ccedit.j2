@@ -705,14 +705,6 @@ int main(int argc, char **argv) {
     auto set_cmd = app.add_subcommand("set", "Set call id (change constructor/method)");
     set_cmd->add_option("-n", call_n, "Call n (positive for methods, -1 for constructor)")->default_val(-1);
     auto set_cmd_option = set_cmd->add_option("-c", n1, "Call id (random if not provided)");
-    
-    auto swap_cmd = app.add_subcommand("swap", "Swap two calls");
-    swap_cmd->add_option("-1,--n1", n1, "First call id to swap with");
-    swap_cmd->add_option("-2,--n2", n2, "Second call id to swap with");
-    
-    auto dup_cmd = app.add_subcommand("dup", "Duplicate call");
-    dup_cmd->add_option("-1,--n1", "Which call duplicate");
-    dup_cmd->add_option("-2,--n2", "Position of the duplicated call");
 
     bool eval(false);
     auto eval_option = app.add_flag("-e,--eval", eval, "Evaluate CC after all modifications");
@@ -845,8 +837,6 @@ int main(int argc, char **argv) {
             size = cc.set_c(n1, size + MUTATION_RESERVE);
         else
             size = cc.set_m(call_n, n1, size + MUTATION_RESERVE);
-    } else {
-        // TODO: other subcommands
     }
 
     // Print output
