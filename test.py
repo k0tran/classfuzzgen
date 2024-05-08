@@ -44,10 +44,14 @@ def rm_test_map(n):
 def ins_test_map(n, c):
     return ['ins', '-n', str(n), '-c', str(c)]
 
+def seta_test_map(n, k, arg_hex):
+    return ['seta', '-n', str(n), '-k', str(k), '-x', arg_hex]
+
 TEST_ARG_MAPPERS = {
     'crossover': co_test_map,
     'rm': rm_test_map,
     'ins': ins_test_map,
+    'seta': seta_test_map,
 }
 
 TIME_TESTS = {
@@ -85,7 +89,14 @@ TIME_TESTS = {
         ['fe010203', 2, 4, 'fe01020403'],
         ['fe010203', 3, 4, 'fe01020304'],
         ['fe010203', 4, 4, 'fe04010203'],
-    ]
+    ],
+    'seta': [
+        ['ff2c2c2c2c2cc6c3bbbbbbbb2c', -1, -1, 'aaaaaaaa', 'ffaaaaaaaa2cc6c3bbbbbbbb2c'],
+        ['ff2c2c2c2c2cc6c3bbbbbbbb2c', -1, 0, 'aaaaaaaa', 'ffaaaaaaaa2cc6c3bbbbbbbb2c'],
+        
+        ['ff2c2c2c2c2cc6c3bbbbbbbb2c', 2, -1, 'aaaaaaaa', 'ff2c2c2c2c2cc6c3aaaaaaaa2c'],
+        ['ff2c2c2c2c2cc6c3bbbbbbbb2c', 2, 0, 'aaaaaaaa', 'ff2c2c2c2c2cc6c3aaaaaaaa2c'],
+    ],
 }
 
 WALKER_TESTS = {
@@ -120,7 +131,7 @@ WALKER_TESTS = {
         ['fe2c2c2e2e', 3, 0, 'fe2c2c2e002e'],
         ['fe2c2c2e2e', 4, 0, 'fe2c2c2e2e00'],
         ['fe2c2c2e2e', 5, 0, 'fe002c2c2e2e'],
-    ]
+    ],
 }
 
 if __name__ == '__main__':
