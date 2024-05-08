@@ -378,6 +378,91 @@ public:
         return d_size;
     }
 
+    /// Set constructor
+    size_t set_c(size_t id, size_t max_size) {
+        if (is_empty() || is_const())
+            throw std::logic_error("Attempt to set constructor of an empty/const CC");
+        id %= target::c_size;
+        
+        // Calculate change
+        size_t offset = target::c_list[id].args.bytesize - (c_size - 1);
+        if (d_size + offset > max_size)
+            return d_size;
+
+        // The simplest way
+        if (offset == 0) {
+            d2[0] = id;
+            for (size_t i = 1; i < c_size; ++i)
+                d2[i] = 0;
+            return d_size;
+        }
+        
+        // Shrink/expand d
+        if (offset < 0) {
+            for (size_t i = c_size; i < d_size; ++i)
+                d2[i + offset] = d2[i];
+        } else {
+            for (size_t i = d_size; i >= c_size; --i)
+                d2[i + offset] = d2[i];
+        }
+
+        // Fix m
+        d_size += offset;
+        for (size_t i = 0; i < m_size; ++i)
+            m[i] += offset;
+        
+        // Set call
+        d2[0] = id;
+        c_size += offset;
+        for (size_t i = 1; i < c_size; ++i)
+            d2[i] = 0;
+        
+        return d_size;
+    }
+
+    /// Set method
+    size_t set_m(size_t n, size_t id, size_t max_size) {
+        if (is_methodless() || is_const())
+            throw std::logic_error("Attempt to call set method on a methodless/const CC");
+        n %= m_size;
+        id %= target::m_size;
+
+        // Calculate change
+        size_t old_args = target::m_list[d2[m[n]] % target::m_size].args.bytesize;
+        size_t offset = target::m_list[id].args.bytesize - old_args;
+
+        // The simplest way
+        if (offset == 0) {
+            d2[m[n]] = id;
+            for (size_t i = 0; i < old_args; ++i)
+                d2[m[n] + 1 + i] = 0;
+            return d_size;
+        }
+
+        // Shrink/expand d
+        size_t limit = n == m_size - 1 ? d_size : m[n + 1]; 
+        if (offset < 0) {
+            for (size_t i = m[n + 1]; i < d_size; ++i)
+                d2[i + offset] = d2[i];
+        } else {
+            for (size_t i = d_size; i >= limit; --i)
+                d2[i + offset] = d2[i];
+        }
+
+        // Fix m
+        d_size += offset;
+        limit += offset;
+        for (size_t i = n + 1; i < m_size; ++i)
+            m[i] += offset;
+        
+        // Set call
+        d2[m[n]] = id;
+        for (size_t i = m[n] + 1; i < limit; ++i)
+            d2[i] = 0;
+        
+        return d_size;
+    }
+
 private:
     /// Source buffer data
     const uint8_t *d1;
@@ -616,6 +701,10 @@ int main(int argc, char **argv) {
     seta_cmd->add_option("-n", call_n, "Call n (positive for methods, -1 for constructor)")->default_val(-1);
     seta_cmd->add_option("-k", call_k, "Argument id (-1 to set all)")->default_val(-1);
     auto seta_arg_option = seta_cmd->add_option("-x,--hex", hex_arg, "Argument value in hex (random if not provided)");
+
+    auto set_cmd = app.add_subcommand("set", "Set call id (change constructor/method)");
+    set_cmd->add_option("-n", call_n, "Call n (positive for methods, -1 for constructor)")->default_val(-1);
+    auto set_cmd_option = set_cmd->add_option("-c", n1, "Call id (random if not provided)");
     
     auto swap_cmd = app.add_subcommand("swap", "Swap two calls");
     swap_cmd->add_option("-1,--n1", n1, "First call id to swap with");
@@ -747,6 +836,15 @@ int main(int argc, char **argv) {
                 arg[i] = std::strtol(tmp.c_str(), NULL, 16);
             }
         }
+    } else if (app.got_subcommand(set_cmd)) {
+        // Set call id to random if it's not provided
+        if (set_cmd_option->count() == 0)
+            n1 = rng();
+        
+        if (call_n == -1)
+            size = cc.set_c(n1, size + MUTATION_RESERVE);
+        else
+            size = cc.set_m(call_n, n1, size + MUTATION_RESERVE);
     } else {
         // TODO: other subcommands
     }
