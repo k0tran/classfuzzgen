@@ -326,7 +326,7 @@ public:
         // Fix m array
         int shift = offset - (m[n + 1] - m[n]);
         for (size_t i = n + 1; i < m_size - 1; ++i)
-            m[i] += offset;
+            m[i] += shift;
         m_size--;
 
         return d_size;
