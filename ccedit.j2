@@ -195,7 +195,7 @@ public:
 
     /// Get method id
     size_t get_mid(size_t n) const {
-        if (!is_empty())
+        if (!is_methodless())
             return d1[m[n % m_size]] % target::m_size;
         throw std::logic_error("Attempt to get method id of an empty CC");
     }

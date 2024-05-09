@@ -190,7 +190,7 @@ public:
 
     /// Get method id
     size_t get_mid(size_t n) const {
-        if (!is_empty())
+        if (!is_methodless())
             return d1[m[n % m_size]] % target::m_size;
         throw std::logic_error("Attempt to get method id of an empty CC");
     }
@@ -584,7 +584,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
             default: {/* Should be unreachable */}
         }
     // TODO: add probabilty to this mutation
-    // s = LLVMFuzzerMutate(data, size, max_size);
+    s = LLVMFuzzerMutate(data, size, max_size);
 
     return s;
 }
