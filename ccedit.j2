@@ -46,7 +46,8 @@ struct CData {
 
     {% for a in c.args -%}
     {{ a.name }} *arg_{{ loop.index }} = ({{ a.name }} *)(data + size);
-    size += sizeof({{ a.name }});{% endfor %}
+    size += sizeof({{ a.name }});
+    {% endfor %}
 
     return {{ class_name }}({% for a in c.args %}{% if loop.index != 0 %}, {% endif %}*arg_{{loop.index}}{% endfor %});
 {% endif %}{{ "};" }}
@@ -58,7 +59,8 @@ const CData c_list[] = {
     {
         .args = {
             .list = {
-                {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},{% endfor %}
+                {% for a in c.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},
+                {% endfor %}
             },
             .size = {{ length(c.args) }},
             .bytesize = 0{% for a in c.args %} + sizeof({{ a.name }}){% endfor %},
@@ -85,7 +87,8 @@ void method_{{ loop.index }}({{ class_name }} *obj, const uint8_t *data) {
 
     {% for a in m.args -%}
     {{ a.name }} *arg_{{ loop.index }} = ({{ a.name }} *)(data + size);
-    size += sizeof({{ a.name }});{% endfor %}
+    size += sizeof({{ a.name }});
+    {% endfor %}
 
     obj->{{ m.name }}({% for a in m.args %}{% if loop.index != 0 %}, {% endif %}*arg_{{ loop.index }}{% endfor %});
 {% endif %}{{ "};"}}
@@ -97,7 +100,8 @@ const MData m_list[] = {
     {
         .args = {
             .list = {
-                {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},{% endfor %}
+                {% for a in m.args %}{{ "{" }}{{ a.is_pointer }}, sizeof({{ a.name }}), "{{ a.name }}"},
+                {% endfor %}
             },
             .size = {{ length(m.args) }},
             .bytesize = 0{% for a in m.args %} + sizeof({{ a.name }}){% endfor %},
