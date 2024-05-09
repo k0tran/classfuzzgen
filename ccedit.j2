@@ -323,11 +323,10 @@ public:
             d2[i - offset] = d2[i];
         d_size -= offset;
 
-        // Fix m array
-        int shift = offset - (m[n + 1] - m[n]);
-        for (size_t i = n + 1; i < m_size - 1; ++i)
-            m[i] += shift;
+        // Shift values of m and substract offset
         m_size--;
+        for (size_t i = n; i < m_size; ++i)
+            m[i] = m[i + 1] - offset;
 
         return d_size;
     }
