@@ -336,7 +336,7 @@ public:
     size_t ins_m(size_t n, size_t id, size_t max_size) {
         id %= target::m_size;
         size_t args = target::m_list[id].args.bytesize;
-        if (is_empty() || is_const() || d_size + 1 + args > max_size || m_size >= MLIMIT)
+        if (is_empty() || is_const() || d_size + 1 + args > max_size || m_size + 1 >= MLIMIT)
             return d_size;
         
         // mod + 1 because we want to add methods to the start and end
