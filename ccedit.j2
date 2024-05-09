@@ -495,9 +495,13 @@ private:
             m[m_size] = ptr;
             ptr += 1 + target::m_list[d1[ptr] % target::m_size].args.bytesize;
         }
-        if (ptr != d_size) { // Check if we have incomplete call
+
+        // ptr points to last call end
+        // if it's greater than d_size then we have to trow away last call
+        if (ptr != d_size) {
+            // Roll back to last ptr
+            d_size = m[m_size - 1];
             m_size--;
-            d_size = ptr;
         }
     }
 };
