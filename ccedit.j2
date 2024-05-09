@@ -367,13 +367,12 @@ public:
         for (size_t i = 0; i < args; ++i)
             d2[m[n] + 1 + i] = 0;
                 
-        // Fix m array
-        int offset = (1 + args) - (m[n + 1] - m[n]);
-        for (size_t i = n + 1; i < m_size; ++i)
-            m[i] += offset;
-        m[m_size] = d_size;
         d_size += 1 + args;
         m_size++;
+
+        // Shift offset values of m and add (1 + args) to them
+        for (size_t i = m_size; i >= n + 1; --i)
+            m[i] = m[i - 1] + 1 + args;
 
         return d_size;
     }
