@@ -55,13 +55,6 @@ int Stats::get() const {
             break;
         }
     // if check things
-    for (size_t i = 0; i < SIZE + 1; ++i) {
-        std::cout << data[i][i][i] << " vs "<< i * 2 << std::endl;
-        if (data[i][i][i] != i * 2) {
-            check = false;
-            break;
-        }
-    }
 
     return data[x][y][z];
 }
