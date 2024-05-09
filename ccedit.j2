@@ -707,7 +707,7 @@ int main(int argc, char **argv) {
     auto set_cmd_option = set_cmd->add_option("-c", n1, "Call id (random if not provided)");
 
     bool eval(false);
-    auto eval_option = app.add_flag("-e,--eval", eval, "Evaluate CC after all modifications");
+    app.add_flag("-e,--eval", eval, "Evaluate CC after all modifications");
 
     CCOutFormat out_mode;
     std::map<std::string, CCOutFormat> out_format_map{
@@ -716,7 +716,7 @@ int main(int argc, char **argv) {
         {"p", CCOutFormat::Printable},
         {"q", CCOutFormat::Quiet}
     };
-    auto out_format_option = app.add_option("-o,--out", out_mode, "Output format")
+    app.add_option("-o,--out", out_mode, "Output format")
         ->default_val(CCOutFormat::Printable)
         ->transform(CLI::CheckedTransformer(out_format_map, CLI::ignore_case).description("Output format"));
 
