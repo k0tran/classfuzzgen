@@ -16,8 +16,10 @@ def run_tests(test_group_name, test):
     print('Testing', test_group_name)
     for i, t in enumerate(test):
         args = TEST_ARG_MAPPERS[test_group_name](*t[1:-1])
-        if run_test(t[0], args) != t[-1]:
+        res = run_test(t[0], args)
+        if res != t[-1]:
             print('Error on test: ', t)
+            print('Expected:', t[-1], 'Got:', res)
             sys.exit(1)
         else:
             print(f'Test #{i} completed')
@@ -109,6 +111,8 @@ TIME_TESTS = {
         ['ffaaaaaaaa2c2e', 0, 0, 'ffaaaaaaaa00000000002e'],
         ['ffaaaaaaaa2c2e', 1, 0, 'ffaaaaaaaa2c0000000000'],
         ['ffaaaaaaaa2c2e', 2, 0, 'ffaaaaaaaa00000000002e'],
+
+        ['0004000300000000006883be05010102', 1, 2, '00040200006883be'],
     ],
 }
 
