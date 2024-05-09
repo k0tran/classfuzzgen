@@ -629,7 +629,7 @@ extern "C" size_t LLVMFuzzerCustomCrossOver(
         out[i] = data1[i];
     
     // Copy second part
-    for (size_t j = cc2.get_m_offset(n2); j < size2; ++j, ++i)
+    for (size_t j = cc2.get_m_offset(n2); j < size2 && i < size; ++j, ++i)
         out[i] = data2[j];
 
     return size;
