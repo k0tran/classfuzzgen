@@ -4,17 +4,16 @@ import sys
 
 RUNS=10
 
-def run(filename, max_time=60):
+def run(filename, max_time=60, target_error_fn='Time::set'):
     proc = subprocess.run(["/bin/time", "--format=elapsed: %e", filename, "-max_total_time=" + str(max_time),\
     "-dump_coverage=1"], capture_output=True, text=True, check=False)
 
     output = proc.stderr
 
-    if re.findall(r"ERROR", output):
+    if re.findall(r"ERROR", output) and target_error_fn not in output:
         print("Found an error\nCaptured output:\nSTART\n" + output + "END")
     
-    last_run = re.findall(r"#\d+\s+\w+.+", output)[-1]
-    cov = int(re.findall(r"cov: \d+", last_run)[0].split(' ')[-1])
+    cov = int(re.findall(r"cov: \d+", output)[-1].split(' ')[-1])
 
     elapsed = float(re.findall(r"elapsed: .+", output)[-1].split(' ')[-1])
 
