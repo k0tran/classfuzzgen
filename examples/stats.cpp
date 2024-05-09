@@ -3,7 +3,7 @@
 #include <climits>
 #include <cmath>
 
-Stats::Stats(size_t start_x, size_t start_y, size_t start_z) : x(start_x), y(start_y), z(start_z) {
+Stats::Stats(size_t start_x, size_t start_y, size_t start_z) : x(start_x % SIZE), y(start_y % SIZE), z(start_z % SIZE) {
     data = new int**[SIZE];
     for (size_t i = 0; i < SIZE; ++i) {
         data[i] = new int*[SIZE];
@@ -26,10 +26,10 @@ Stats::~Stats() {
 
 void Stats::move(size_t coord_id, int amount) {
     coord_id %= 3;
-    amount %= MOVESPEED;
+    amount %= 2;
 
     size_t &val = coord_id == 0 ? x : coord_id == 1 ? y : z;
-    if (amount < 0 && std::abs(amount) > val)
+    if (amount == -1 && val < 1)
         val = 0;
     else {
         val += amount;
@@ -45,6 +45,8 @@ size_t Stats::dec() {
     return --(data[x][y][z]);
 }
 
+#include <iostream>
+
 int Stats::get() const {
     bool check = true;
     for (size_t i = 0; i < SIZE + 1; ++i)
@@ -53,6 +55,13 @@ int Stats::get() const {
             break;
         }
     // if check things
+    for (size_t i = 0; i < SIZE + 1; ++i) {
+        std::cout << data[i][i][i] << " vs "<< i * 2 << std::endl;
+        if (data[i][i][i] != i * 2) {
+            check = false;
+            break;
+        }
+    }
 
     return data[x][y][z];
 }

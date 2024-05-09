@@ -20,18 +20,6 @@ Vulnerability: SIGSEGV wich can be achieved with 8 calls to `Walker::right()` an
 Files: [stats.hpp](stats.cpp), [stats.cpp](stats.cpp)\
 Vulnerability: SIGSEGV wich can be achieved if `Stats::get` goes out of bounds which can be achieved with certain combinations of `Stats::move` and `Stats::inc`
 Comment: for now it's not working bc libfuzzer overuses memory even when destructor called explicitly
-Poc for reaching SIGSEGV:
-```cpp
-Stats s(0, 0, 0);
-
-for (size_t i = 0; i < Stats::SIZE; ++i) {
-    for (size_t j = 0; j < i * 2; ++j)
-        s.inc();
-    
-    s.move(0, 1);
-    s.move(1, 1);
-    s.move(2, 1);
-}
-
-s.get();
-```
+PoC and Hex of CC is in [test_stats.cpp](test_stats.cpp)
+**WARN:** Check if your fuzzer build has room for such callchain
+**WARN2:** `using std::size_t;` is necessary for libclang

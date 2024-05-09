@@ -1,11 +1,13 @@
 #pragma once
 
 #include <csignal>
+#include <cstddef>
+
+using std::size_t;
 
 class Stats {
 public:
-    static const size_t SIZE = 1000;
-    static const size_t MOVESPEED = 5;
+    static const size_t SIZE = 10;
 
     Stats(size_t, size_t, size_t);
 
