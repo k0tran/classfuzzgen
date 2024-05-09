@@ -10,7 +10,7 @@ def run(filename, max_time=60):
 
     output = proc.stderr
 
-    if re.findall(r"ERROR", output) is not None:
+    if re.findall(r"ERROR", output):
         print("Found an error\nCaptured output:\nSTART\n" + output + "END")
     
     last_run = re.findall(r"#\d+\s+\w+.+", output)[-1]
