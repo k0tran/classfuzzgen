@@ -429,34 +429,36 @@ public:
         size_t old_args = target::m_list[d2[m[n]] % target::m_size].args.bytesize;
         int offset = target::m_list[id].args.bytesize - old_args;
 
-        // The simplest way
-        if (offset == 0) {
+        if (d_size + offset > max_size)
+            return d_size;
+
+        // If we don't need to shift we just set everything
+        // Same goes if our element is the last one
+        if (offset == 0 || n == m_size - 1) {
             d2[m[n]] = id;
             for (size_t i = 0; i < target::m_list[id].args.bytesize; ++i)
                 d2[m[n] + 1 + i] = 0;
+            d_size += offset;
             return d_size;
         }
 
-        size_t end_of_call_n = n == m_size - 1 ? d_size - 1 : m[n + 1];
-
         // Shrink/expand d
         if (offset < 0) {
-            for (size_t i = end_of_call_n; i < d_size; ++i)
+            for (size_t i = m[n + 1]; i < d_size; ++i)
                 d2[i + offset] = d2[i];
         } else {
-            for (size_t i = d_size; i >= end_of_call_n; --i)
+            for (size_t i = d_size - 1; i >= m[n + 1]; --i)
                 d2[i + offset] = d2[i];
         }
 
         // Fix m
         d_size += offset;
-        end_of_call_n += offset;
         for (size_t i = n + 1; i < m_size; ++i)
             m[i] += offset;
         
         // Set call
         d2[m[n]] = id;
-        for (size_t i = m[n] + 1; i < end_of_call_n; ++i)
+        for (size_t i = m[n] + 1; i < m[n + 1]; ++i)
             d2[i] = 0;
         
         return d_size;
