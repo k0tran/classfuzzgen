@@ -102,10 +102,22 @@ constexpr size_t m_size = std::size(m_list);
 
 extern "C" size_t LLVMFuzzerMutate(uint8_t *data, size_t size, size_t max_size);
 
+#include <iomanip>
+void print_hex(const uint8_t *data, size_t size) {
+    for (size_t i = 0; i < size; ++i)
+        std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)data[i];
+}
+
+/**
+ * This is class for working with Call Chains (mutations and other userful functions)
+ * Note that parsing takes time and for simple classes it's better to used standart binary mutations
+*/
 class CallChain {
 public:
-    static const size_t LIMIT = {{ cc_limit }};
+    /// MAX amount of methods allowed (class uses static memory)
+    static const size_t MLIMIT = {{ cc_limit }}; 
 
+    /// Evaluate CC while reading
     static int eval(const uint8_t *data, size_t size) {
         if (size == 0)
             return 1;
@@ -120,20 +132,22 @@ public:
         auto obj = c.fn(data + ptr);
         ptr += c.args.bytesize;
 
-        if (ptr >= size)
+        if (ptr == size) // CC with only constructor
             return 1;
 
         auto m = target::m_list[data[ptr] % target::m_size];
         ptr++;
 
-        size_t i = 1;
-        while (ptr + m.args.bytesize <= size && i++ < LIMIT) {
+        for (size_t i = 0; i < MLIMIT; ++i) {
+            if (ptr + m.args.bytesize > size)
+                break;
+            
             m.fn(&obj, data + ptr);
             ptr += m.args.bytesize;
 
-            if (ptr >= size)
+            if (ptr == size) // No room for method id
                 return 1;
-
+            
             m = target::m_list[data[ptr] % target::m_size];
             ptr++;
         }
@@ -141,197 +155,349 @@ public:
         return 0;
     }
 
-    CallChain(const uint8_t *data, size_t size) : d1(data), d2(nullptr), d_size(size) { update_chain(); }
+    CallChain(const uint8_t *data, size_t size) : d1(data), d2(nullptr), d_size(size) { update(); }
+    
+    CallChain(uint8_t *data, size_t size) : d1(data), d2(data), d_size(size) { update(); }
 
-    CallChain(uint8_t * data, size_t size) : d1(data), d2(data), d_size(size) { update_chain(); }
-
-    size_t get_call_start_idx(size_t n) {
-        if (n == 0)
-            return 0;
-        return calls[n - 1];
+    inline bool is_const() const {
+        return d2 == nullptr;
     }
 
-    size_t get_cid(size_t n) const {
-        if (n == 0)
+    inline bool is_empty() const {
+        return c_size == 0;
+    }
+
+    inline bool is_methodless() const {
+        return m_size == 0;
+    }
+
+    /// Returns amount of methods (not counting constructor)
+    inline size_t get_msize() const {
+        return m_size;
+    }
+
+    /// Get used bytes size
+    inline size_t get_dsize() const {
+        return d_size;
+    }
+
+    /// Get constructor id
+    size_t get_cid() const {
+        if (!is_empty())
             return d1[0] % target::c_size;
-        return d1[calls[n - 1]] % target::m_size;
+        throw std::logic_error("Attempt to get constructor id of an empty CC");
     }
 
-    size_t get_size() const {
-        return calls_size;
+    /// Get method id
+    size_t get_mid(size_t n) const {
+        if (!is_empty())
+            return d1[m[n % m_size]] % target::m_size;
+        throw std::logic_error("Attempt to get method id of an empty CC");
     }
 
-    size_t get_arg_offset(size_t n, size_t a) const {
-        size_t offset = n == 0 ? 1 : calls[n - 1] + 1;
-        size_t cid = get_cid(n);
-        const target::AData &ad = n == 0 ? target::c_list[cid].args : target::m_list[cid].args;
+    /// Is constructor argless
+    bool is_c_argless() const {
+        if (is_empty())
+            throw std::logic_error("Attempt to check if constructor argless when there is no constructor");
+        return c_size == 1;
+    }
 
-        if (a > ad.size)
+    /// Get arg bytearray for constructor
+    std::tuple<const uint8_t *, size_t> get_c_arg(size_t arg_n) const {
+        if (is_empty())
+            return std::make_tuple(nullptr, 0);
+
+        auto c_args = target::c_list[d1[0] % target::c_size].args;
+
+        if (c_args.size == 0)
+            return std::make_tuple(nullptr, 0);
+
+        arg_n %= c_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += c_args.list[i].size;
+        
+        return std::make_tuple(d1 + bytes, c_args.list[i].size);
+    }
+
+    /// Get mutable arg bytearray for constructor
+    std::tuple<uint8_t *, size_t> get_c_arg(size_t arg_n) {
+        if (is_empty() || is_const())
+            return std::make_tuple(nullptr, 0);
+
+        auto c_args = target::c_list[d2[0] % target::c_size].args;
+
+        if (c_args.size == 0)
+            return std::make_tuple(nullptr, 0);
+
+        arg_n %= c_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += c_args.list[i].size;
+        
+        return std::make_tuple(d2 + bytes, c_args.list[i].size);
+    }
+
+    bool is_m_argless(size_t n) const {
+        if (is_methodless())
+            throw std::logic_error("Attempt to check if method argless when there is no methods");
+        auto m_args = target::m_list[d1[m[n % m_size]] % target::m_size].args;
+        return m_args.size == 0; 
+    }
+
+    /// Get arg bytearray for method
+    std::tuple<const uint8_t *, size_t> get_m_arg(size_t n, size_t arg_n) const {
+        if (is_methodless())
+            return std::make_tuple(nullptr, 0);
+
+        n %= m_size;
+        auto m_args = target::m_list[d1[m[n]] % target::m_size].args;
+
+        if (m_args.size == 0)
+            return std::make_tuple(nullptr, 0);
+
+        arg_n %= m_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += m_args.list[i].size;
+        
+        return std::make_tuple(d1 + m[n] + bytes, m_args.list[i].size);
+    }
+
+    /// Get mutable arg bytearray for method
+    std::tuple<uint8_t *, size_t> get_m_arg(size_t n, size_t arg_n) {
+        if (is_methodless() || is_const())
+            return std::make_tuple(nullptr, 0);
+
+        n %= m_size;
+        auto m_args = target::m_list[d2[m[n]] % target::m_size].args;
+
+        if (m_args.size == 0)
+            return std::make_tuple(nullptr, 0);
+
+        arg_n %= m_args.size;
+        
+        size_t i, bytes = 1;
+        for (i = 0; i < arg_n; ++i)
+            bytes += m_args.list[i].size;
+        
+        return std::make_tuple(d2 + m[n] + bytes, m_args.list[i].size);
+    }
+
+    /// Get offset of method
+    size_t get_m_offset(size_t n) const {
+        if (is_empty())
             return 0;
-
-        for (size_t i = 0; i < a; ++i)
-            offset += ad.list[i].size;
+        if (is_methodless())
+            return c_size;
         
-        return offset;
+        return m[n % m_size];
     }
 
-    const uint8_t *get_arg_ptr(size_t n, size_t a) const {
-        size_t offset = get_arg_offset(n, a);
-        if (offset == 0) // impossible cause first is always constructor id
-            return nullptr;
-        
-        return d1 + offset;
-    }
-
-    size_t remove_call(size_t n) {
-        n %= calls_size;
-        if (d2 == nullptr || n == 0)
+    /// Remove method from CC
+    /// Returns new byte len
+    size_t rm_m(size_t n) {
+        if (is_empty() || is_methodless() || is_const())
             return d_size;
 
-        size_t shift = calls[n] - calls[n - 1];
-        for (size_t i = calls[n - 1]; i < d_size - shift; ++i)
-            d2[i] = d2[i + shift];
-        d_size -= shift;
+        n %= m_size;
 
-        update_chain();
-        
-        return d_size;
-    }
-
-    size_t insert_call(size_t cid, size_t n, size_t max_size) {
-        cid %= target::m_size;
-        n %= (calls_size + 1);
-        if (d2 == nullptr || n == 0 || calls_size >= LIMIT)
+        // If it's last then just cut it off
+        if (n == m_size - 1) {
+            d_size = m[n];
+            m_size--;
             return d_size;
-
-        size_t shift = target::m_list[cid].args.bytesize + 1;
-        if (d_size + shift > max_size)
-            return d_size;
-        
-        for (size_t i = d_size - 1; i >= calls[n - 1]; --i)
-            d2[i + shift] = d2[i];
-
-        d2[calls[n - 1]] = cid;
-        for (size_t i = 1; i < shift; ++i)
-            d2[calls[n - 1] + i] = 0;
-        d_size += shift;
-
-        update_chain();
-
-        return d_size;
-    }
-
-    size_t mutate_args(size_t n) {
-        if (d2 == nullptr || d_size > 1 || calls_size == 0)
-            return d_size;
-        n %= calls_size;
-        
-        uint8_t *data; size_t size;
-        if (n == 0) {
-            data = d2 + 1;
-            size = calls[0] == 0 ? 0 : calls[0] - 1;
-        } else {
-            data = d2 + calls[n - 1] + 1;
-            size = calls[n] - calls[n - 1];
         }
 
-        if (size == 0) {
-            n = 0;
-            do {
-                if (n == 0) {
-                    data = d2 + 1;
-                    size = calls[0] == 0 ? 0 : calls[0] - 1;
-                } else {
-                    data = d2 + calls[n - 1] + 1;
-                    size = calls[n] - calls[n - 1];
-                }
-            } while (n < calls_size && size == 0 && n++);
+        // Shift everything in d2
+        size_t offset = m[n + 1] - m[n];
+        for (size_t i = m[n + 1]; i < d_size; ++i)
+            d2[i - offset] = d2[i];
+        d_size -= offset;
+
+        // Shift values of m and substract offset
+        m_size--;
+        for (size_t i = n; i < m_size; ++i)
+            m[i] = m[i + 1] - offset;
+
+        return d_size;
+    }
+
+    /// Insert method
+    /// Returns new byte length
+    size_t ins_m(size_t n, size_t id, size_t max_size) {
+        id %= target::m_size;
+        size_t args = target::m_list[id].args.bytesize;
+        if (is_empty() || is_const() || d_size + 1 + args > max_size || m_size >= MLIMIT)
+            return d_size;
+        
+        // mod + 1 because we want to add methods to the start and end
+        n = m_size == 0 ? 0 : n % (m_size + 1);
+
+        // If it's last then it's simple
+        if (n == m_size) {
+            // Create new empty call
+            d2[d_size] = id;
+            for (size_t i = 0; i < args; ++i)
+                d2[d_size + 1 + i] = 0;
             
-            if (n >= calls_size || size == 0)
-                return d_size;
+            // Update class info
+            m[m_size] = d_size;
+            d_size += 1 + args;
+            m_size++;
+
+            return d_size;
+        }
+        
+        // Shift everything
+        for (size_t i = d_size - 1; i >= m[n]; --i)
+            d2[i + 1 + args] = d2[i];
+        
+        // Set call
+        d2[m[n]] = id;
+        for (size_t i = 0; i < args; ++i)
+            d2[m[n] + 1 + i] = 0;
+        
+        d_size += 1 + args;
+        m_size++;
+
+        // Shift offset values of m and add (1 + args) to them
+        for (size_t i = m_size; i >= n + 1; --i)
+            m[i] = m[i - 1] + 1 + args;
+
+        return d_size;
+    }
+
+    /// Set constructor
+    size_t set_c(size_t id, size_t max_size) {
+        if (is_empty() || is_const())
+            return d_size;
+        id %= target::c_size;
+        
+        // Calculate change
+        int offset = target::c_list[id].args.bytesize - (c_size - 1);
+        if (d_size + offset > max_size)
+            return d_size;
+
+        // The simplest way
+        if (offset == 0) {
+            d2[0] = id;
+            for (size_t i = 1; i < c_size; ++i)
+                d2[i] = 0;
+            return d_size;
+        }
+        
+        // Shrink/expand d
+        if (offset < 0) {
+            for (size_t i = c_size; i < d_size; ++i)
+                d2[i + offset] = d2[i];
+        } else {
+            for (size_t i = d_size; i >= c_size; --i)
+                d2[i + offset] = d2[i];
         }
 
-        size_t s;
-        do {
-            s = LLVMFuzzerMutate(data, size, size);
-        } while (s != size);
-
+        // Fix m
+        d_size += offset;
+        for (size_t i = 0; i < m_size; ++i)
+            m[i] += offset;
+        
+        // Set call
+        d2[0] = id;
+        c_size += offset;
+        for (size_t i = 1; i < c_size; ++i)
+            d2[i] = 0;
+        
         return d_size;
     }
 
-    size_t swap_calls(size_t p1, size_t p2) {
-        p1 %= calls_size;
-        p2 %= calls_size;
-        if (d2 == nullptr || calls_size < 3 || p1 == 0 || p2 == 0)
+    /// Set method
+    size_t set_m(size_t n, size_t id, size_t max_size) {
+        if (is_methodless() || is_const())
+            return d_size;
+        n %= m_size;
+        id %= target::m_size;
+
+        // Calculate change
+        size_t old_args = target::m_list[d2[m[n]] % target::m_size].args.bytesize;
+        int offset = target::m_list[id].args.bytesize - old_args;
+
+        if (d_size + offset > max_size)
             return d_size;
 
-        uint8_t buf[16 + 1]; // TODO: MAKE IT ARG TOTAL SIZE DEPENDENT
-        
-        for (size_t i = calls[p1 - 1]; i < calls[p1]; ++i)
-            buf[i - calls[p1 - 1]] = d2[i];
-        
-        size_t max = d_size;
-        remove_call(p1);
-        insert_call(buf[0], p2, max);
-
-        for (size_t i = calls[p2 - 1]; i < calls[p2]; ++i)
-            d2[i] = buf[i - calls[p2 - 1]];
-
-        update_chain();
-
-        return d_size;
-    }
-
-    size_t duplicate_call(size_t from, size_t to, size_t max_size) {
-        to %= calls_size;
-        from %= calls_size;
-        if (d2 == nullptr || from == 0 || to == 0)
+        // If we don't need to shift we just set everything
+        // Same goes if our element is the last one
+        if (offset == 0 || n == m_size - 1) {
+            d2[m[n]] = id;
+            for (size_t i = 0; i < target::m_list[id].args.bytesize; ++i)
+                d2[m[n] + 1 + i] = 0;
+            d_size += offset;
             return d_size;
-        
-        uint8_t buf[16 + 1]; // TODO MAKE IT ARG TOTAL SIZE DEPENDENT
-        
-        size_t offset = calls[from - 1];
-        buf[0] = d2[offset];
-        offset++;
-        for(size_t i = offset; i < calls[from]; ++i)
-            buf[i - offset] = d2[i];
-        
-        size_t past = d_size;
-        insert_call(buf[0], to, max_size);
-        if (past == d_size)
-            return d_size;
+        }
 
-        for (size_t i = calls[to - 1]; i < calls[to]; ++i)
-            d2[i] = buf[i - calls[to - 1]];
+        // Shrink/expand d
+        if (offset < 0) {
+            for (size_t i = m[n + 1]; i < d_size; ++i)
+                d2[i + offset] = d2[i];
+        } else {
+            for (size_t i = d_size - 1; i >= m[n + 1]; --i)
+                d2[i + offset] = d2[i];
+        }
 
-        update_chain();
-
+        // Fix m
+        d_size += offset;
+        for (size_t i = n + 1; i < m_size; ++i)
+            m[i] += offset;
+        
+        // Set call
+        d2[m[n]] = id;
+        for (size_t i = m[n] + 1; i < m[n + 1]; ++i)
+            d2[i] = 0;
+        
         return d_size;
     }
 
 private:
+    /// Source buffer data
     const uint8_t *d1;
     uint8_t *d2;
-    size_t d_size;
+    size_t d_size; // Note that d_size is data **used**, not allocated/stored
 
-    size_t calls[LIMIT];
-    size_t calls_size;
+    /// Constructor section length
+    size_t c_size;
 
-    void update_chain() {
-        if (d_size == 0) {
-            calls_size = 0;
+    // Method offsets
+    size_t m[MLIMIT];
+    size_t m_size;
+
+    /// Update method data depending on d1
+    void update() {
+        m_size = 0;
+        c_size = 0;
+
+        if (d_size == 0)
             return;
+
+        size_t offset = 1 + target::c_list[d1[0] % target::c_size].args.bytesize;
+        if (offset > d_size)
+            return;
+        
+        c_size = offset;
+        
+        size_t ptr;
+        for (ptr = offset; ptr < d_size && m_size < MLIMIT; ++m_size) {
+            m[m_size] = ptr;
+            ptr += 1 + target::m_list[d1[ptr] % target::m_size].args.bytesize;
         }
 
-        if (d2 != nullptr && d1 != d2)
-            d1 = d2;
-        
-        calls[0] = target::c_list[d1[0] % target::c_size].args.bytesize + 1;
-        calls_size = 1;
-
-        while (calls_size < LIMIT && calls[calls_size - 1] < d_size) {
-            calls[calls_size] = calls[calls_size - 1] + target::m_list[d1[calls[calls_size - 1]] % target::m_size].args.bytesize + 1;
-            calls_size++;
+        // ptr points to last call end
+        // if it's greater than d_size then we have to trow away last call
+        if (ptr != d_size) {
+            // Roll back to last ptr
+            d_size = m[m_size - 1];
+            m_size--;
         }
     }
 };
@@ -341,46 +507,84 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size, size_t max
         return size;
 
     CallChain cc(data, size);
-
-    if (cc.get_size() == 0)
-        return size;
+    if (cc.is_empty())
+        return LLVMFuzzerMutate(data, size, max_size);
 
     std::mt19937 rng(seed);
-    size_t s;
-    // TODO: make probabilities set by
-    for (size_t i = 0; i < 4; ++i) // TODO: make LIMIT customizable
+    size_t s = size;
+    // TODO: add mutation probabilities and set them within generator
+    for (size_t i = 0; i < 8; ++i) // TODO: make LIMIT customizable (generator param)
         switch (rng() % 4) {
+            // Remove method
             case 0: {
-                // TODO: make applicable many times
-                // size_t cnt = 1 + rng() % 5; // 1 - 5
-                // for (size_t i = 0; i < cnt - 1; ++i)
-                //     s = cc.remove_call(rng());
-                if (cc.get_size() > 2) // We don't want to make it's empty
-                    s = cc.remove_call(rng());
+                s = cc.rm_m(rng());
                 break;
             }
+            // Insert method
             case 1: {
-                // TODO: make applicable many times
-                // size_t cnt = 1 + rng() % 5; // 1 - 5
-                // for (size_t i = 0; i < cnt; ++i)
-                //     s = cc.insert_call(rng(), rng(), max_size);
-                s = cc.insert_call(rng(), rng(), max_size);
+                s = cc.ins_m(rng(), rng(), max_size);
                 break;
             }
+            // Set argument(s)
             case 2: {
-                // TODO: make applicable many times
-                s = cc.duplicate_call(rng(), rng(), max_size);
+                uint8_t *arg;
+                size_t arg_size;
+
+                // 0 is used to indicate constructor
+                size_t call_k = rng(), call_n = rng() % (cc.get_msize() + 1);
+                if (call_n == 0) {
+                    auto c_args = target::c_list[cc.get_cid()].args;
+
+                    // 0 is used to indicate mutation of all arguments at once
+                    call_k %= c_args.size + 1;
+                    size_t k = call_k == 0 ? call_k : call_k - 1;
+
+                    std::tie(arg, arg_size) = cc.get_c_arg(k);
+                    
+                    // If we want to mutate all args we need to expand size
+                    if (call_k == 0)
+                        arg_size = c_args.bytesize;
+                } else {
+                    call_n -= 1;
+                    auto m_args = target::m_list[cc.get_mid(call_n)].args;
+
+                    // 0 is used to indicate mutation of all arguments at once
+                    call_k %= m_args.size + 1;
+                    size_t k = call_k == 0 ? call_k : call_k - 1;
+
+                    std::tie(arg, arg_size) = cc.get_m_arg(call_n, k);
+
+                    // If we want to mutate all args we need to expand size
+                    if (call_k == 0)
+                        arg_size = m_args.bytesize;
+                }
+
+                // Check if there is such arg
+                if (arg == nullptr)
+                    continue;
+
+                // Fill argument with random bytes
+                for (size_t i = 0; i < arg_size; ++i)
+                    arg[i] = rng();
+                
                 break;
             }
-            default: {
-                // TODO: make applicable many times
-                s = cc.mutate_args(rng());
+            // Set constructor/method
+            case 3: {
+                // Zero used to indicate constructor
+                size_t call_n = rng() % (cc.get_msize() + 1);
+
+                if (call_n == 0)
+                    s = cc.set_c(rng(), max_size);
+                else
+                    s = cc.set_m(call_n - 1, rng(), max_size);
+
                 break;
             }
+            default: {/* Should be unreachable */}
         }
-    
     // TODO: add probabilty to this mutation
-    s = LLVMFuzzerMutate(data, size, max_size);
+    // s = LLVMFuzzerMutate(data, size, max_size);
 
     return s;
 }
@@ -391,34 +595,44 @@ extern "C" size_t LLVMFuzzerCustomCrossOver(
     uint8_t *out, size_t max_out_size,
     unsigned int seed
 ) {
-    CallChain c1(data1, size1), c2(data2, size2);
+    CallChain cc1(data1, size1), cc2(data2, size2);
 
-    if (c1.get_size() == 0 || c2.get_size() == 0) {
+    // Check if crossover is not applicable
+    if (cc1.is_empty() || cc2.is_methodless()) {
         for (size_t i = 0; i < size1; ++i)
-            out[i] = 0;
+            out[i] = data1[i];
         return size1;
     }
 
+    // Pick random split points
     std::mt19937 rng(seed);
-    size_t p1, p2, i = 0;
-    do {
-        p1 = rng() % c1.get_size();
-        p2 = rng() % c2.get_size();
-    } while (c1.get_call_start_idx(p1) + c2.get_call_start_idx(p2) >= max_out_size + size2 && p1 + p2 >= CallChain::LIMIT + c2.get_size()  && i++ < 10);
-
-    if (i >= 10) {
+    // Mod with +1 is because:
+    // 0 - we take constructor only
+    // cc1.get_msize() - we take whole CC
+    size_t n1 = rng() % (cc1.get_msize() + 1);
+    // Here we take methods from p2 to cc2.get_msize()
+    // Note that we can't take 0 methods
+    size_t n2 = rng() % cc2.get_msize();
+    
+    // Check if we go out of bounds
+    size_t size = n1 + (size2 - n2);
+    if (size > max_out_size) {
         for (size_t i = 0; i < size1; ++i)
-            out[i] = 0;
-        return max_out_size;
+            out[i] = data1[i];
+        return size1;
     }
 
-    for (i = 0; i < c1.get_call_start_idx(p1); ++i)
+    // Copy first part (we should be careful to not get_m_offset for n1 == m_size)
+    size_t limit = n1 == cc1.get_msize() ? size1 : cc1.get_m_offset(n1);
+    size_t i;
+    for (i = 0; i < limit; ++i)
         out[i] = data1[i];
     
-    for (size_t j = c2.get_call_start_idx(p2); j < size2; ++j, ++i)
+    // Copy second part
+    for (size_t j = cc2.get_m_offset(n2); j < size2; ++j, ++i)
         out[i] = data2[j];
-    
-    return i;
+
+    return size;
 }
 
 
