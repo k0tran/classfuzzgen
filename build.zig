@@ -6,18 +6,20 @@ pub fn build(b: *std.Build) void {
 
     const cfgen = b.addExecutable(.{
         .name = "cfgen",
-        .root_source_file = .{ .path = "src/main.cpp" },
         .target = target,
         .optimize = optimize,
     });
-    cfgen.addCSourceFiles(&.{
-        "src/ast.cpp",
-        "src/class.cpp",
-        "src/cli.cpp",
-        "src/render.cpp",
-    }, &.{});
-    cfgen.addIncludePath(.{ .path = "include/" });
+    cfgen.addCSourceFiles(.{
+        .files = &[_][]const u8{
+            "src/main.cpp",
+            "src/ast.cpp",
+            "src/class.cpp",
+            "src/cli.cpp",
+            "src/render.cpp",
+        },
+    });
     cfgen.linkLibCpp();
+    cfgen.addIncludePath(.{ .path = "include/" });
     cfgen.linkSystemLibrary("clang");
     b.installArtifact(cfgen);
 
